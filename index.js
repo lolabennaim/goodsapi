@@ -287,7 +287,6 @@ function setup(){
   Promise.all(promises).then(function(){
     buildViewTabs(views);
     switchView(views[0]);
-    bindCanvas(); // ✅ une seule fois ici, pas dans renderCanvas
     buildZones();
     updatePrix();
     showHint();
@@ -350,37 +349,65 @@ function renderCanvas(){
       var lg=logos[globalIdx];
       var pts2=zone.pts.map(function(p){return{x:p.x*scale,y:p.y*scale};});
       var zx=pts2[0].x,zy=pts2[0].y,zw=pts2[1].x-pts2[0].x,zh=pts2[3].y-pts2[0].y;
-      initLogoPos(globalIdx);
+
+      // ✅ Position relative (0-1) → pixels canvas
+      // rw = largeur relative à la zone (0-1), rx/ry = offset relatif
+      if(lg.rw===undefined){
+        // Premier affichage : centré à 70% de la zone
+        var lAspect=lg.imgEl.naturalWidth/lg.imgEl.naturalHeight||1;
+        var fw=Math.min(0.7, 0.7/lAspect * (zh/zw));
+        lg.rw=Math.min(0.7, fw>0?fw:0.7);
+        lg.rh=lg.rw*(zw/zw)*(1/lAspect)*(zw/zh); // h relatif à zh
+        // recalcul propre
+        var pw=lg.rw*zw, ph=pw/lAspect;
+        lg.rh=ph/zh;
+        lg.rx=(1-lg.rw)/2; // centré horizontalement
+        lg.ry=(1-lg.rh)/2; // centré verticalement
+      }
+
+      // Convertir en pixels pour le rendu
+      var lx=zx+lg.rx*zw, ly=zy+lg.ry*zh;
+      var lw=lg.rw*zw, lh=lg.rh*zh;
+
+      // Exposer sur lg pour bindCanvas
+      lg.x=lx; lg.y=ly; lg.w=lw; lg.h=lh;
+      lg._zx=zx; lg._zy=zy; lg._zw=zw; lg._zh=zh;
+
       ctx.save();
       ctx.beginPath();ctx.rect(zx,zy,zw,zh);ctx.clip();
-      ctx.drawImage(lg.imgEl,lg.x,lg.y,lg.w,lg.h);
+      ctx.drawImage(lg.imgEl,lx,ly,lw,lh);
       if(globalIdx===activeZoneIdx){
         ctx.strokeStyle='#5b3de8';ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
-        ctx.strokeRect(lg.x,lg.y,lg.w,lg.h);ctx.setLineDash([]);
-        ctx.fillStyle='rgba(91,61,232,.08)';ctx.fillRect(lg.x,lg.y,lg.w,lg.h);
-        ctx.fillStyle='rgba(91,61,232,.7)';ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillText('✥',lg.x+lg.w/2,lg.y+lg.h/2);
+        ctx.strokeRect(lx,ly,lw,lh);ctx.setLineDash([]);
+        ctx.fillStyle='rgba(91,61,232,.08)';ctx.fillRect(lx,ly,lw,lh);
+        ctx.fillStyle='rgba(91,61,232,.85)';ctx.font='bold 16px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText('✥',lx+lw/2,ly+lh/2);
         var hs=HANDLE;
         ctx.fillStyle='#5b3de8';
-        ctx.beginPath();ctx.roundRect(lg.x+lg.w-hs/2,lg.y+lg.h-hs/2,hs,hs,3);ctx.fill();
-        ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillText('↔',lg.x+lg.w,lg.y+lg.h);
+        ctx.beginPath();ctx.roundRect(lx+lw-hs/2,ly+lh-hs/2,hs,hs,3);ctx.fill();
+        ctx.fillStyle='#fff';ctx.font='bold 11px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText('⤡',lx+lw,ly+lh);
       }
       ctx.restore();
     }
   });
 
+  // ✅ bindCanvas ici — scale est à jour après chaque renderCanvas
+  if(cv._unbind) cv._unbind();
+  bindCanvas();
 }
 
 // ── INIT POSITION LOGO ────────────────────────────────────────────────────────
 // Appelé dès storeLogo pour que lg.x soit défini avant tout mousedown
 function initLogoPos(idx){
   var lg=logos[idx];
-  if(!lg||!lg.imgEl||lg.x!==undefined)return;
+  if(!lg||!lg.imgEl)return;
+  if(!scale||scale===0)return; // scale pas encore défini
   var zone=config.zones[idx];
   if(!zone||!zone.pts||zone.pts.length<4)return;
   var pts=zone.pts.map(function(p){return{x:p.x*scale,y:p.y*scale};});
   var zx=pts[0].x,zy=pts[0].y,zw=pts[1].x-pts[0].x,zh=pts[3].y-pts[0].y;
+  if(zw<=0||zh<=0)return; // zone invalide
   var lAspect=lg.imgEl.naturalWidth/lg.imgEl.naturalHeight||1;
   var maxW2=zw*.7,maxH2=zh*.7;
   lg.w=Math.min(maxW2,maxH2*lAspect);
@@ -408,23 +435,29 @@ function bindCanvas(){
     e.preventDefault();
     var p=getPoint(e);
 
-    // ── Logo actif : check resize puis move ──
-    if(activeZoneIdx!==null&&logos[activeZoneIdx]){
-      var lg=logos[activeZoneIdx];
-      initLogoPos(activeZoneIdx); // ✅ garantit que lg.x est défini
-      // Poignée resize (coin bas-droit)
+    // ── 1. Check TOUS les logos visibles sur la vue courante (resize puis move) ──
+    var zonesVisible=config.zones.filter(function(z){return z.view===activeView;});
+    for(var li=0;li<zonesVisible.length;li++){
+      var lzone=zonesVisible[li];
+      var lidx=config.zones.indexOf(lzone);
+      if(!logos[lidx]||!logos[lidx].imgEl)continue;
+      var lg=logos[lidx];
+      if(lg.x===undefined)continue; // pas encore rendu
+      // Resize (coin bas-droit)
       if(Math.abs(p.x-(lg.x+lg.w))<HANDLE&&Math.abs(p.y-(lg.y+lg.h))<HANDLE){
-        resizing={idx:activeZoneIdx,startX:p.x,startY:p.y,startW:lg.w,startH:lg.h,aspect:lg.w/(lg.h||1)};
-        return;
+        activeZoneIdx=lidx;
+        resizing={idx:lidx,startX:p.x,startY:p.y,startW:lg.w,startH:lg.h,aspect:lg.w/(lg.h||1)};
+        renderCanvas();return;
       }
-      // Poignée move (intérieur du logo)
+      // Move (intérieur du logo)
       if(p.x>=lg.x&&p.x<=lg.x+lg.w&&p.y>=lg.y&&p.y<=lg.y+lg.h){
-        dragging={idx:activeZoneIdx,offX:p.x-lg.x,offY:p.y-lg.y};
-        return;
+        activeZoneIdx=lidx;
+        dragging={idx:lidx,offX:p.x-lg.x,offY:p.y-lg.y};
+        renderCanvas();return;
       }
     }
 
-    // ── Clic sur une zone sans logo → sélectionner ──
+    // ── 2. Clic sur une zone → sélectionner (seulement si pas touché un logo) ──
     var zones=config.zones.filter(function(z){return z.view===activeView;});
     for(var i=0;i<zones.length;i++){
       var zone=zones[i];if(!zone.pts||zone.pts.length<4)continue;
@@ -442,21 +475,24 @@ function bindCanvas(){
     var p=getPoint(e);
     if(dragging){
       var lg=logos[dragging.idx];
-      var zone=config.zones[dragging.idx];
-      var pts=zone.pts.map(function(pt){return{x:pt.x*scale,y:pt.y*scale};});
-      var zx=pts[0].x,zy=pts[0].y,zw=pts[1].x-pts[0].x,zh=pts[3].y-pts[0].y;
-      lg.x=Math.max(zx,Math.min(zx+zw-lg.w,p.x-dragging.offX));
-      lg.y=Math.max(zy,Math.min(zy+zh-lg.h,p.y-dragging.offY));
+      var zx=lg._zx,zy=lg._zy,zw=lg._zw,zh=lg._zh;
+      // Nouvelle position pixel clampée dans la zone
+      var nx=Math.max(zx,Math.min(zx+zw-lg.w, p.x-dragging.offX));
+      var ny=Math.max(zy,Math.min(zy+zh-lg.h, p.y-dragging.offY));
+      // Convertir en relatif
+      lg.rx=(nx-zx)/zw;
+      lg.ry=(ny-zy)/zh;
       renderCanvas();return;
     }
     if(resizing){
       var lg=logos[resizing.idx];
-      var zone=config.zones[resizing.idx];
-      var pts=zone.pts.map(function(pt){return{x:pt.x*scale,y:pt.y*scale};});
-      var zx=pts[0].x,zy=pts[0].y,zw=pts[1].x-pts[0].x,zh=pts[3].y-pts[0].y;
+      var zx=lg._zx,zy=lg._zy,zw=lg._zw,zh=lg._zh;
       var dx=p.x-resizing.startX;
-      lg.w=Math.max(20,Math.min(zw,resizing.startW+dx));
-      lg.h=lg.w/resizing.aspect;
+      var newW=Math.max(20,Math.min(zw, resizing.startW+dx));
+      var newH=newW/resizing.aspect;
+      // Convertir en relatif
+      lg.rw=newW/zw;
+      lg.rh=newH/zh;
       renderCanvas();return;
     }
     // Curseur adaptatif
@@ -569,6 +605,7 @@ function onLogoUpload(input){
   var r=new FileReader();
   r.onload=function(e){
     var b64=e.target.result;
+    input.value=''; // ✅ reset input → même fichier uploadable sur une autre zone
     if(isAI){
       storeLogo(file,b64,makePlaceholder('AI'),targetIdx);
       return;
