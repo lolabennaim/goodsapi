@@ -80,10 +80,9 @@ body{font-family:'Inter',sans-serif;background:#f1f0ee;color:#111827;font-size:1
 .zb-check{font-size:16px}
 
 /* UPLOAD */
-.upload-zone{border:2px dashed var(--border);border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:all .15s;position:relative}
+.upload-zone{border:2px dashed #c4b5fd;border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:all .15s;background:#fff}
 .upload-zone:hover{border-color:var(--p);background:var(--pl)}
 .upload-zone.has-file{border-color:#10b981;border-style:solid;background:#f0fdf4}
-.upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
 .up-ico{font-size:28px;margin-bottom:6px}
 .up-txt{font-size:13px;font-weight:600;color:var(--text)}
 .up-sub{font-size:11px;color:var(--muted);margin-top:2px}
@@ -167,9 +166,8 @@ body{font-family:'Inter',sans-serif;background:#f1f0ee;color:#111827;font-size:1
         <div class="up-sub" id="fmtHint">PNG, JPG, SVG, AI, PDF, EPS</div>
       </div>
       <div class="logo-preview" id="logoPreview" style="display:none">
-        <img class="logo-prev-img" id="logoPrevImg" src="">
-        <span class="logo-prev-name" id="logoPrevName"></span>
-        <button class="logo-del" onclick="removeLogo()">✕</button>
+        <span class="logo-prev-name" id="logoPrevName" style="flex:1;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+        <button class="logo-del" onclick="removeLogo()" style="border:none;background:transparent;cursor:pointer;color:#e03e3e;font-size:16px;padding:0">✕</button>
       </div>
     </div>
 
@@ -526,11 +524,14 @@ function updateLogoPreview(idx){
   var prev=document.getElementById('logoPreview');
   if(lg){
     zone.classList.add('has-file');
-    document.getElementById('logoPrevImg').src=lg.b64;
+    zone.querySelector('.up-ico').textContent='✅';
+    zone.querySelector('.up-txt').textContent='Logo chargé';
     document.getElementById('logoPrevName').textContent=lg.file.name;
     prev.style.display='flex';
   } else {
     zone.classList.remove('has-file');
+    zone.querySelector('.up-ico').textContent='📁';
+    zone.querySelector('.up-txt').textContent='Clique pour uploader ton logo';
     prev.style.display='none';
   }
 }
