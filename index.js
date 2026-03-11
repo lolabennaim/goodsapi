@@ -160,12 +160,12 @@ body{font-family:'Inter',sans-serif;background:#f1f0ee;color:#111827;font-size:1
     <!-- UPLOAD (apparaît quand zone sélectionnée) -->
     <div class="section" id="uploadSection" style="display:none">
       <div class="sec-title" id="uploadTitle">Ton logo</div>
-      <label class="upload-zone" id="uploadZone">
-        <input type="file" accept="image/*,.ai,.pdf,.svg,.eps" id="logoInput" onchange="onLogoUpload(this)">
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('logoInput').click()">
+        <input type="file" accept="image/*,.ai,.pdf,.svg,.eps" id="logoInput" style="display:none" onchange="onLogoUpload(this)">
         <div class="up-ico">📁</div>
-        <div class="up-txt">Glisse ou clique pour uploader</div>
+        <div class="up-txt">Clique pour uploader ton logo</div>
         <div class="up-sub" id="fmtHint">PNG, JPG, SVG, AI, PDF, EPS</div>
-      </label>
+      </div>
       <div class="logo-preview" id="logoPreview" style="display:none">
         <img class="logo-prev-img" id="logoPrevImg" src="">
         <span class="logo-prev-name" id="logoPrevName"></span>
