@@ -34,6 +34,16 @@ const CONFIGURATEUR_HTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GOODS — Configurateur</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- ✅ PDF.js chargé une fois pour toutes dans le head -->
+<script src="https://unpkg.com/pdfjs-dist@3.4.120/build/pdf.min.js"></script>
+<script>
+  if (window.pdfjsLib) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc =
+      'https://unpkg.com/pdfjs-dist@3.4.120/build/pdf.worker.min.js';
+  }
+</script>
+
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',sans-serif;background:#f1f0ee;color:#111827;font-size:14px}
@@ -234,7 +244,6 @@ var scale=1;
 async function init(){
   var sku=getParam('sku');
   if(!sku){
-    // Fallback localStorage pour les tests
     var local=localStorage.getItem('goods_config');
     if(local){config=JSON.parse(local);setup();}
     else showErr('Aucun produit chargé');
@@ -248,7 +257,6 @@ async function init(){
     MARGIN=data.margin||2.5;
     setup();
   }catch(e){
-    // Fallback localStorage
     var local=localStorage.getItem('goods_config');
     if(local){config=JSON.parse(local);setup();}
     else showErr('Produit introuvable : '+e.message);
@@ -268,7 +276,6 @@ function setup(){
   document.getElementById('prodName').textContent=config.product&&config.product.name||'Produit';
   document.getElementById('prodSub').textContent='Réf. '+(config.product&&config.product.sku||'—');
 
-  // Précharger toutes les images
   var views=[...new Set(config.zones.map(function(z){return z.view;}))];
   var promises=views.map(function(v){
     var b64=config.viewImgs&&config.viewImgs[v];
@@ -319,7 +326,6 @@ function renderCanvas(){
   ctx=cv.getContext('2d');ctx.scale(dpr,dpr);
   ctx.drawImage(im,0,0,w,h);
 
-  // Dessiner les zones SEULEMENT si active
   var zones=config.zones.filter(function(z){return z.view===activeView;});
   zones.forEach(function(zone,i){
     var globalIdx=config.zones.indexOf(zone);
@@ -330,7 +336,6 @@ function renderCanvas(){
     if(isActive||hasLogo){
       var pts=zone.pts.map(function(p){return{x:p.x*scale,y:p.y*scale};});
       ctx.save();
-      // Zone highlight
       if(isActive&&!hasLogo){
         ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);
         pts.forEach(function(p){ctx.lineTo(p.x,p.y);});ctx.closePath();
@@ -340,12 +345,10 @@ function renderCanvas(){
       ctx.restore();
     }
 
-    // Logo dans la zone
     if(hasLogo&&logos[globalIdx].imgEl){
       var lg=logos[globalIdx];
       var pts2=zone.pts.map(function(p){return{x:p.x*scale,y:p.y*scale};});
       var zx=pts2[0].x,zy=pts2[0].y,zw=pts2[1].x-pts2[0].x,zh=pts2[3].y-pts2[0].y;
-      // Position et taille du logo dans la zone
       if(lg.x===undefined){
         var lAspect=lg.imgEl.naturalWidth/lg.imgEl.naturalHeight;
         var maxW2=zw*.7,maxH2=zh*.7;
@@ -354,17 +357,13 @@ function renderCanvas(){
         lg.x=zx+zw/2-lg.w/2;
         lg.y=zy+zh/2-lg.h/2;
       }
-      // Clip à la zone
       ctx.save();
       ctx.beginPath();ctx.rect(zx,zy,zw,zh);ctx.clip();
       ctx.drawImage(lg.imgEl,lg.x,lg.y,lg.w,lg.h);
-      // Poignées si actif
       if(globalIdx===activeZoneIdx){
         ctx.strokeStyle='#5b3de8';ctx.lineWidth=1.5;ctx.setLineDash([4,3]);
         ctx.strokeRect(lg.x,lg.y,lg.w,lg.h);ctx.setLineDash([]);
-        // Poignée resize
         ctx.fillStyle='#5b3de8';ctx.fillRect(lg.x+lg.w-6,lg.y+lg.h-6,10,10);
-        // Poignée move
         ctx.fillStyle='rgba(91,61,232,.15)';ctx.fillRect(lg.x,lg.y,lg.w,lg.h);
       }
       ctx.restore();
@@ -377,21 +376,17 @@ function renderCanvas(){
 function bindCanvas(){
   cv.onmousedown=function(e){
     var p=cxy(e);
-    // Check si on est sur un logo actif (move ou resize)
     if(activeZoneIdx!==null&&logos[activeZoneIdx]){
       var lg=logos[activeZoneIdx];
-      // Resize handle
       if(Math.abs(p.x-(lg.x+lg.w))<12&&Math.abs(p.y-(lg.y+lg.h))<12){
         resizing={idx:activeZoneIdx,startX:p.x,startY:p.y,startW:lg.w,startH:lg.h,aspect:lg.w/lg.h};
         return;
       }
-      // Move
       if(p.x>lg.x&&p.x<lg.x+lg.w&&p.y>lg.y&&p.y<lg.y+lg.h){
         dragging={idx:activeZoneIdx,offX:p.x-lg.x,offY:p.y-lg.y};
         return;
       }
     }
-    // Check clic sur une zone
     var zones=config.zones.filter(function(z){return z.view===activeView;});
     for(var i=0;i<zones.length;i++){
       var zone=zones[i];if(!zone.pts||zone.pts.length<4)continue;
@@ -421,7 +416,6 @@ function bindCanvas(){
       lg.h=lg.w/resizing.aspect;
       renderCanvas();return;
     }
-    // Curseur
     if(activeZoneIdx!==null&&logos[activeZoneIdx]){
       var lg=logos[activeZoneIdx];
       if(Math.abs(p.x-(lg.x+lg.w))<12&&Math.abs(p.y-(lg.y+lg.h))<12){cv.style.cursor='se-resize';return;}
@@ -456,19 +450,15 @@ function buildZones(){
 function selectZone(idx){
   activeZoneIdx=idx;
   var zone=config.zones[idx];
-  // Switch view si besoin
   if(zone.view!==activeView) switchView(zone.view);
-  // Update UI zones
   document.querySelectorAll('.zone-btn').forEach(function(b,i){
     b.classList.toggle('active',i===idx);
     b.classList.toggle('has-logo',!!logos[i]);
   });
-  // Upload section
   document.getElementById('uploadSection').style.display='block';
   document.getElementById('uploadTitle').textContent='Logo — '+esc(zone.name||'Zone '+(idx+1));
   var fmts=zone.accepted_formats&&zone.accepted_formats.length?zone.accepted_formats.join(', '):'Tous formats';
   document.getElementById('fmtHint').textContent=fmts;
-  // Techniques
   if(zone.techniques&&zone.techniques.length>1){
     document.getElementById('techSection').style.display='block';
     buildTechs(idx,zone);
@@ -476,7 +466,6 @@ function selectZone(idx){
     document.getElementById('techSection').style.display='none';
     if(zone.techniques&&zone.techniques.length===1) activeTech[idx]=zone.techniques[0];
   }
-  // Logo preview
   updateLogoPreview(idx);
   renderCanvas();
   updateCTA();
@@ -502,20 +491,72 @@ function buildTechs(idx,zone){
 function onLogoUpload(input){
   if(!input.files[0]||activeZoneIdx===null)return;
   var file=input.files[0];
+  var name=file.name.toLowerCase();
+  var isPDF=name.endsWith('.pdf')||file.type==='application/pdf';
+  var isAI=name.endsWith('.ai');
+  if(!isPDF&&!isAI){
+    alert('Seuls les fichiers PDF ou AI vectorisés sont acceptés.');
+    input.value='';return;
+  }
   var r=new FileReader();
   r.onload=function(e){
     var b64=e.target.result;
-    var im=new Image();
-    im.onload=function(){
-      logos[activeZoneIdx]={file:file,b64:b64,imgEl:im,x:undefined};
-      updateLogoPreview(activeZoneIdx);
-      document.querySelectorAll('.zone-btn')[activeZoneIdx].classList.add('has-logo');
-      document.getElementById('zcheck-'+activeZoneIdx).textContent='✓';
-      renderCanvas();updateCTA();updatePrix();
-    };
-    im.src=b64;
+    if(isAI){
+      storeLogo(file,b64,makePlaceholder('AI'));
+      return;
+    }
+    // ✅ PDF.js est déjà chargé depuis le <head> — appel direct
+    doRenderPDF(file,b64);
   };
   r.readAsDataURL(file);
+}
+
+function doRenderPDF(file,b64){
+  // ✅ Vérification explicite que pdfjsLib est bien disponible
+  if(!window.pdfjsLib||!window.pdfjsLib.getDocument){
+    console.error('PDF.js non disponible, utilisation du placeholder');
+    storeLogo(file,b64,makePlaceholder('PDF'));
+    return;
+  }
+  var raw=atob(b64.split(',')[1]);
+  var arr=new Uint8Array(raw.length);
+  for(var i=0;i<raw.length;i++)arr[i]=raw.charCodeAt(i);
+  window.pdfjsLib.getDocument({data:arr}).promise.then(function(pdf){
+    return pdf.getPage(1);
+  }).then(function(page){
+    var vp=page.getViewport({scale:2});
+    var oc=document.createElement('canvas');
+    oc.width=vp.width;oc.height=vp.height;
+    return page.render({canvasContext:oc.getContext('2d'),viewport:vp}).promise.then(function(){
+      return oc.toDataURL('image/png');
+    });
+  }).then(function(dataURL){
+    var im=new Image();
+    im.onload=function(){storeLogo(file,b64,im);};
+    im.src=dataURL;
+  }).catch(function(err){
+    console.error('PDF render error:',err);
+    storeLogo(file,b64,makePlaceholder('PDF'));
+  });
+}
+
+function makePlaceholder(label){
+  var oc=document.createElement('canvas');oc.width=200;oc.height=200;
+  var c=oc.getContext('2d');
+  c.fillStyle='#ede9ff';c.fillRect(0,0,200,200);
+  c.fillStyle='#5b3de8';c.font='bold 32px sans-serif';c.textAlign='center';c.fillText(label,100,90);
+  c.font='13px sans-serif';c.fillStyle='#8b5cf6';c.fillText('Fichier reçu ✓',100,130);
+  var im=new Image();im.src=oc.toDataURL();return im;
+}
+
+function storeLogo(file,b64,imgEl){
+  logos[activeZoneIdx]={file:file,b64:b64,imgEl:imgEl,x:undefined};
+  updateLogoPreview(activeZoneIdx);
+  var btns=document.querySelectorAll('.zone-btn');
+  if(btns[activeZoneIdx])btns[activeZoneIdx].classList.add('has-logo');
+  var zcheck=document.getElementById('zcheck-'+activeZoneIdx);
+  if(zcheck)zcheck.textContent='✓';
+  renderCanvas();updateCTA();updatePrix();
 }
 
 function updateLogoPreview(idx){
@@ -560,9 +601,7 @@ function setQty(n){
 
 // ── PRIX ──────────────────────────────────────────────────────────────────────
 function updatePrix(){
-  // Prix produit Makito (base fictive, sera remplacé par scraping)
   var pBase=config.product&&config.product.pricing&&config.product.pricing.base||0;
-  // Pour l'instant on affiche juste les lignes sans montant si pas de prix
   var nZones=Object.keys(logos).length||1;
   var cliche=30*nZones;
   var marquage=getPrixMarquage();
@@ -575,7 +614,6 @@ function updatePrix(){
 }
 
 function getPrixMarquage(){
-  // Grille dégrade par palier (sera remplacée par les vrais prix Makito)
   var paliers=[[50,0.65],[100,0.56],[250,0.48],[500,0.415],[1000,0.35]];
   var prix=paliers[0][1];
   for(var i=0;i<paliers.length;i++){if(qty>=paliers[i][0])prix=paliers[i][1];}
@@ -614,6 +652,7 @@ init();
 </body>
 </html>
 `;
+
 app.get('/configurateur', (req, res) => {
   res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(CONFIGURATEUR_HTML);
