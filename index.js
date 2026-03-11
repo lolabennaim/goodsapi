@@ -80,7 +80,7 @@ body{font-family:'Inter',sans-serif;background:#f1f0ee;color:#111827;font-size:1
 .zb-check{font-size:16px}
 
 /* UPLOAD */
-.upload-zone{border:2px dashed #c4b5fd;border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:all .15s;background:#fff}
+.upload-zone{border:2px dashed #c4b5fd;border-radius:12px;padding:20px;text-align:center;cursor:pointer;transition:all .15s;background:#fff;position:relative;overflow:hidden}
 .upload-zone:hover{border-color:var(--p);background:var(--pl)}
 .upload-zone.has-file{border-color:#10b981;border-style:solid;background:#f0fdf4}
 .up-ico{font-size:28px;margin-bottom:6px}
@@ -159,8 +159,8 @@ body{font-family:'Inter',sans-serif;background:#f1f0ee;color:#111827;font-size:1
     <!-- UPLOAD (apparaît quand zone sélectionnée) -->
     <div class="section" id="uploadSection" style="display:none">
       <div class="sec-title" id="uploadTitle">Ton logo</div>
-      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('logoInput').click()">
-        <input type="file" accept=".pdf,.ai,application/pdf" id="logoInput" style="display:none" onchange="onLogoUpload(this)">
+      <div class="upload-zone" id="uploadZone">
+        <input type="file" accept=".pdf,.ai,application/pdf" id="logoInput" onchange="onLogoUpload(this)" style="position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;z-index:10">
         <div class="up-ico">📁</div>
         <div class="up-txt">Clique pour uploader ton logo</div>
         <div class="up-sub" id="fmtHint">PDF ou AI vectorisé uniquement</div>
