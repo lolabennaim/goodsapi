@@ -34,6 +34,7 @@ const CONFIGURATEUR_HTML = `<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>GOODS — Configurateur</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Inter',sans-serif;background:#f1f0ee;color:#111827;font-size:14px}
@@ -160,10 +161,10 @@ body{font-family:'Inter',sans-serif;background:#f1f0ee;color:#111827;font-size:1
     <div class="section" id="uploadSection" style="display:none">
       <div class="sec-title" id="uploadTitle">Ton logo</div>
       <div class="upload-zone" id="uploadZone" onclick="document.getElementById('logoInput').click()">
-        <input type="file" accept="image/*,.ai,.pdf,.svg,.eps" id="logoInput" style="display:none" onchange="onLogoUpload(this)">
+        <input type="file" accept=".pdf,.ai,application/pdf" id="logoInput" style="display:none" onchange="onLogoUpload(this)">
         <div class="up-ico">📁</div>
         <div class="up-txt">Clique pour uploader ton logo</div>
-        <div class="up-sub" id="fmtHint">PNG, JPG, SVG, AI, PDF, EPS</div>
+        <div class="up-sub" id="fmtHint">PDF ou AI vectorisé uniquement</div>
       </div>
       <div class="logo-preview" id="logoPreview" style="display:none">
         <span class="logo-prev-name" id="logoPrevName" style="flex:1;font-size:12px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
