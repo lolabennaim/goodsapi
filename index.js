@@ -287,6 +287,7 @@ function setup(){
   Promise.all(promises).then(function(){
     buildViewTabs(views);
     switchView(views[0]);
+    bindCanvas(); // ✅ une seule fois ici, pas dans renderCanvas
     buildZones();
     updatePrix();
     showHint();
@@ -349,44 +350,81 @@ function renderCanvas(){
       var lg=logos[globalIdx];
       var pts2=zone.pts.map(function(p){return{x:p.x*scale,y:p.y*scale};});
       var zx=pts2[0].x,zy=pts2[0].y,zw=pts2[1].x-pts2[0].x,zh=pts2[3].y-pts2[0].y;
-      if(lg.x===undefined){
-        var lAspect=lg.imgEl.naturalWidth/lg.imgEl.naturalHeight;
-        var maxW2=zw*.7,maxH2=zh*.7;
-        lg.w=Math.min(maxW2,maxH2*lAspect);
-        lg.h=lg.w/lAspect;
-        lg.x=zx+zw/2-lg.w/2;
-        lg.y=zy+zh/2-lg.h/2;
-      }
+      initLogoPos(globalIdx);
       ctx.save();
       ctx.beginPath();ctx.rect(zx,zy,zw,zh);ctx.clip();
       ctx.drawImage(lg.imgEl,lg.x,lg.y,lg.w,lg.h);
       if(globalIdx===activeZoneIdx){
-        ctx.strokeStyle='#5b3de8';ctx.lineWidth=1.5;ctx.setLineDash([4,3]);
+        ctx.strokeStyle='#5b3de8';ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
         ctx.strokeRect(lg.x,lg.y,lg.w,lg.h);ctx.setLineDash([]);
-        ctx.fillStyle='#5b3de8';ctx.fillRect(lg.x+lg.w-6,lg.y+lg.h-6,10,10);
-        ctx.fillStyle='rgba(91,61,232,.15)';ctx.fillRect(lg.x,lg.y,lg.w,lg.h);
+        ctx.fillStyle='rgba(91,61,232,.08)';ctx.fillRect(lg.x,lg.y,lg.w,lg.h);
+        ctx.fillStyle='rgba(91,61,232,.7)';ctx.font='bold 14px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText('✥',lg.x+lg.w/2,lg.y+lg.h/2);
+        var hs=HANDLE;
+        ctx.fillStyle='#5b3de8';
+        ctx.beginPath();ctx.roundRect(lg.x+lg.w-hs/2,lg.y+lg.h-hs/2,hs,hs,3);ctx.fill();
+        ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText('↔',lg.x+lg.w,lg.y+lg.h);
       }
       ctx.restore();
     }
   });
 
-  bindCanvas();
 }
 
+// ── INIT POSITION LOGO ────────────────────────────────────────────────────────
+// Appelé dès storeLogo pour que lg.x soit défini avant tout mousedown
+function initLogoPos(idx){
+  var lg=logos[idx];
+  if(!lg||!lg.imgEl||lg.x!==undefined)return;
+  var zone=config.zones[idx];
+  if(!zone||!zone.pts||zone.pts.length<4)return;
+  var pts=zone.pts.map(function(p){return{x:p.x*scale,y:p.y*scale};});
+  var zx=pts[0].x,zy=pts[0].y,zw=pts[1].x-pts[0].x,zh=pts[3].y-pts[0].y;
+  var lAspect=lg.imgEl.naturalWidth/lg.imgEl.naturalHeight||1;
+  var maxW2=zw*.7,maxH2=zh*.7;
+  lg.w=Math.min(maxW2,maxH2*lAspect);
+  lg.h=lg.w/lAspect;
+  lg.x=zx+zw/2-lg.w/2;
+  lg.y=zy+zh/2-lg.h/2;
+}
+
+var HANDLE=14; // taille zone de hit des poignées (px)
+
 function bindCanvas(){
-  cv.onmousedown=function(e){
-    var p=cxy(e);
+  // Évite les doublons d'events
+  cv.onmousedown=null;cv.onmousemove=null;cv.onmouseup=null;
+  cv.ontouchstart=null;cv.ontouchmove=null;cv.ontouchend=null;
+
+  function getPoint(e){
+    if(e.touches){
+      var r=cv.getBoundingClientRect();
+      return{x:e.touches[0].clientX-r.left,y:e.touches[0].clientY-r.top};
+    }
+    return cxy(e);
+  }
+
+  function onDown(e){
+    e.preventDefault();
+    var p=getPoint(e);
+
+    // ── Logo actif : check resize puis move ──
     if(activeZoneIdx!==null&&logos[activeZoneIdx]){
       var lg=logos[activeZoneIdx];
-      if(Math.abs(p.x-(lg.x+lg.w))<12&&Math.abs(p.y-(lg.y+lg.h))<12){
-        resizing={idx:activeZoneIdx,startX:p.x,startY:p.y,startW:lg.w,startH:lg.h,aspect:lg.w/lg.h};
+      initLogoPos(activeZoneIdx); // ✅ garantit que lg.x est défini
+      // Poignée resize (coin bas-droit)
+      if(Math.abs(p.x-(lg.x+lg.w))<HANDLE&&Math.abs(p.y-(lg.y+lg.h))<HANDLE){
+        resizing={idx:activeZoneIdx,startX:p.x,startY:p.y,startW:lg.w,startH:lg.h,aspect:lg.w/(lg.h||1)};
         return;
       }
-      if(p.x>lg.x&&p.x<lg.x+lg.w&&p.y>lg.y&&p.y<lg.y+lg.h){
+      // Poignée move (intérieur du logo)
+      if(p.x>=lg.x&&p.x<=lg.x+lg.w&&p.y>=lg.y&&p.y<=lg.y+lg.h){
         dragging={idx:activeZoneIdx,offX:p.x-lg.x,offY:p.y-lg.y};
         return;
       }
     }
+
+    // ── Clic sur une zone sans logo → sélectionner ──
     var zones=config.zones.filter(function(z){return z.view===activeView;});
     for(var i=0;i<zones.length;i++){
       var zone=zones[i];if(!zone.pts||zone.pts.length<4)continue;
@@ -397,9 +435,11 @@ function bindCanvas(){
         selectZone(globalIdx);return;
       }
     }
-  };
-  cv.onmousemove=function(e){
-    var p=cxy(e);
+  }
+
+  function onMove(e){
+    e.preventDefault();
+    var p=getPoint(e);
     if(dragging){
       var lg=logos[dragging.idx];
       var zone=config.zones[dragging.idx];
@@ -411,20 +451,46 @@ function bindCanvas(){
     }
     if(resizing){
       var lg=logos[resizing.idx];
+      var zone=config.zones[resizing.idx];
+      var pts=zone.pts.map(function(pt){return{x:pt.x*scale,y:pt.y*scale};});
+      var zx=pts[0].x,zy=pts[0].y,zw=pts[1].x-pts[0].x,zh=pts[3].y-pts[0].y;
       var dx=p.x-resizing.startX;
-      lg.w=Math.max(20,resizing.startW+dx);
+      lg.w=Math.max(20,Math.min(zw,resizing.startW+dx));
       lg.h=lg.w/resizing.aspect;
       renderCanvas();return;
     }
+    // Curseur adaptatif
     if(activeZoneIdx!==null&&logos[activeZoneIdx]){
       var lg=logos[activeZoneIdx];
-      if(Math.abs(p.x-(lg.x+lg.w))<12&&Math.abs(p.y-(lg.y+lg.h))<12){cv.style.cursor='se-resize';return;}
-      if(p.x>lg.x&&p.x<lg.x+lg.w&&p.y>lg.y&&p.y<lg.y+lg.h){cv.style.cursor='move';return;}
+      if(lg.x!==undefined){
+        if(Math.abs(p.x-(lg.x+lg.w))<HANDLE&&Math.abs(p.y-(lg.y+lg.h))<HANDLE){cv.style.cursor='se-resize';return;}
+        if(p.x>=lg.x&&p.x<=lg.x+lg.w&&p.y>=lg.y&&p.y<=lg.y+lg.h){cv.style.cursor='move';return;}
+      }
     }
     cv.style.cursor='default';
+  }
+
+  function onUp(){dragging=null;resizing=null;}
+
+  cv.addEventListener('mousedown',onDown);
+  cv.addEventListener('mousemove',onMove);
+  cv.addEventListener('mouseup',onUp);
+  cv.addEventListener('touchstart',onDown,{passive:false});
+  cv.addEventListener('touchmove',onMove,{passive:false});
+  cv.addEventListener('touchend',onUp);
+
+  // Garde une ref pour cleanup si besoin
+  cv._unbind=function(){
+    cv.removeEventListener('mousedown',onDown);
+    cv.removeEventListener('mousemove',onMove);
+    cv.removeEventListener('mouseup',onUp);
+    cv.removeEventListener('touchstart',onDown);
+    cv.removeEventListener('touchmove',onMove);
+    cv.removeEventListener('touchend',onUp);
   };
-  cv.onmouseup=function(){dragging=null;resizing=null;};
 }
+
+
 
 function cxy(e){
   var r=cv.getBoundingClientRect();
@@ -498,24 +564,24 @@ function onLogoUpload(input){
     alert('Seuls les fichiers PDF ou AI vectorisés sont acceptés.');
     input.value='';return;
   }
+  // ✅ Capturer la zone cible immédiatement — activeZoneIdx peut changer pendant le rendu async
+  var targetIdx=activeZoneIdx;
   var r=new FileReader();
   r.onload=function(e){
     var b64=e.target.result;
     if(isAI){
-      storeLogo(file,b64,makePlaceholder('AI'));
+      storeLogo(file,b64,makePlaceholder('AI'),targetIdx);
       return;
     }
-    // ✅ PDF.js est déjà chargé depuis le <head> — appel direct
-    doRenderPDF(file,b64);
+    doRenderPDF(file,b64,targetIdx);
   };
   r.readAsDataURL(file);
 }
 
-function doRenderPDF(file,b64){
-  // ✅ Vérification explicite que pdfjsLib est bien disponible
+function doRenderPDF(file,b64,targetIdx){
   if(!window.pdfjsLib||!window.pdfjsLib.getDocument){
     console.error('PDF.js non disponible, utilisation du placeholder');
-    storeLogo(file,b64,makePlaceholder('PDF'));
+    storeLogo(file,b64,makePlaceholder('PDF'),targetIdx);
     return;
   }
   var raw=atob(b64.split(',')[1]);
@@ -532,11 +598,11 @@ function doRenderPDF(file,b64){
     });
   }).then(function(dataURL){
     var im=new Image();
-    im.onload=function(){storeLogo(file,b64,im);};
+    im.onload=function(){storeLogo(file,b64,im,targetIdx);};
     im.src=dataURL;
   }).catch(function(err){
     console.error('PDF render error:',err);
-    storeLogo(file,b64,makePlaceholder('PDF'));
+    storeLogo(file,b64,makePlaceholder('PDF'),targetIdx);
   });
 }
 
@@ -549,12 +615,14 @@ function makePlaceholder(label){
   var im=new Image();im.src=oc.toDataURL();return im;
 }
 
-function storeLogo(file,b64,imgEl){
-  logos[activeZoneIdx]={file:file,b64:b64,imgEl:imgEl,x:undefined};
-  updateLogoPreview(activeZoneIdx);
+function storeLogo(file,b64,imgEl,targetIdx){
+  // ✅ targetIdx est la zone capturée au moment de l'upload, pas activeZoneIdx courant
+  logos[targetIdx]={file:file,b64:b64,imgEl:imgEl,x:undefined};
+  initLogoPos(targetIdx);
+  updateLogoPreview(targetIdx);
   var btns=document.querySelectorAll('.zone-btn');
-  if(btns[activeZoneIdx])btns[activeZoneIdx].classList.add('has-logo');
-  var zcheck=document.getElementById('zcheck-'+activeZoneIdx);
+  if(btns[targetIdx])btns[targetIdx].classList.add('has-logo');
+  var zcheck=document.getElementById('zcheck-'+targetIdx);
   if(zcheck)zcheck.textContent='✓';
   renderCanvas();updateCTA();updatePrix();
 }
