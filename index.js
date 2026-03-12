@@ -48,8 +48,8 @@ body{font-family:'Inter',sans-serif;background:#fff;color:#1a1a1a;font-size:14px
 .col-form{width:480px;flex-shrink:0;padding:40px 40px 60px;overflow-y:auto;border-left:1px solid #ebebeb}
 
 /* IMAGE */
-.img-wrap{position:relative;width:100%;max-width:480px;aspect-ratio:1;border-radius:16px;overflow:hidden;background:#ede9e3}
-.img-wrap canvas{position:absolute;inset:0;width:100%!important;height:100%!important;display:block}
+.img-wrap{position:relative;width:100%;max-width:480px;aspect-ratio:1;border-radius:16px;overflow:hidden;background:#ede9e3;display:flex;align-items:center;justify-content:center}
+.img-wrap canvas{display:block;border-radius:16px;cursor:default}
 .img-placeholder{width:100%;height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;color:#bbb}
 .img-placeholder span{font-size:13px}
 .loading-overlay{position:absolute;inset:0;background:rgba(255,255,255,.75);display:flex;align-items:center;justify-content:center;z-index:10;border-radius:16px}
@@ -429,8 +429,11 @@ function bindCanvas(){
   if(cv._unbind)cv._unbind();
   function pt(e){
     var r=cv.getBoundingClientRect();
-    if(e.touches)return{x:(e.touches[0].clientX-r.left),y:(e.touches[0].clientY-r.top)};
-    return{x:(e.clientX-r.left),y:(e.clientY-r.top)};
+    var scaleX=cv.width/r.width;
+    var scaleY=cv.height/r.height;
+    var dpr=window.devicePixelRatio||1;
+    if(e.touches)return{x:(e.touches[0].clientX-r.left)*scaleX/dpr,y:(e.touches[0].clientY-r.top)*scaleY/dpr};
+    return{x:(e.clientX-r.left)*scaleX/dpr,y:(e.clientY-r.top)*scaleY/dpr};
   }
   function onDown(e){
     e.preventDefault();var p=pt(e);
