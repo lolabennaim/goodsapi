@@ -576,7 +576,7 @@ function onLogoReady(file,b64,imgEl){
   var natH=imgEl.naturalHeight||imgEl.height||1;
   if(natH>natW*1.2){
     document.getElementById('loadingOverlay').style.display='none';
-    alert('⚠️ Ton logo est en format portrait (plus haut que large).\n\nPour un meilleur résultat, utilise un logo en format carré ou paysage (largeur ≥ hauteur).\n\nTu peux le recadrer dans ton logiciel graphique avant d\'uploader.');
+    alert('Logo en format portrait detecte.\n\nUtilise un logo en format carre ou paysage (largeur >= hauteur).\n\nRecadre-le dans ton logiciel avant de uploader.');
     return;
   }
   sharedLogo={file:file,b64:b64,imgEl:imgEl};
