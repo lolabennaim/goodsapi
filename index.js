@@ -535,6 +535,11 @@ function bindCanvas(){
     if(!found)cv.style.cursor='default';
   }
 
+  document.addEventListener('mousedown',function(e){
+    if(!cv.contains(e.target)&&activeZoneIdx!==null){
+      activeZoneIdx=null;renderCanvas();
+    }
+  });
   cv.addEventListener('mousedown',onDown);
   cv.addEventListener('mousemove',onHover);
   document.addEventListener('mousemove',onMove);
