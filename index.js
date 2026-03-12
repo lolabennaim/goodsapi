@@ -437,81 +437,90 @@ function initLogoPos(idx,zx,zy,zw,zh){
 // ── BIND CANVAS ──────────────────────────────────────────────────────────────
 function bindCanvas(){
   if(cv._unbind)cv._unbind();
+
+  // coords écran → coords de dessin CSS (même repère que scale)
   function pt(e){
     var r=cv.getBoundingClientRect();
-    var scaleX=cv.width/r.width;
-    var scaleY=cv.height/r.height;
-    var dpr=window.devicePixelRatio||1;
-    if(e.touches)return{x:(e.touches[0].clientX-r.left)*scaleX/dpr,y:(e.touches[0].clientY-r.top)*scaleY/dpr};
-    return{x:(e.clientX-r.left)*scaleX/dpr,y:(e.clientY-r.top)*scaleY/dpr};
+    var cx=e.touches?e.touches[0].clientX:e.clientX;
+    var cy=e.touches?e.touches[0].clientY:e.clientY;
+    var cssW=parseFloat(cv.style.width)||r.width;
+    var cssH=parseFloat(cv.style.height)||r.height;
+    return{x:(cx-r.left)/r.width*cssW, y:(cy-r.top)/r.height*cssH};
   }
+
+  function getZ(zone){
+    var pts=zone.pts.map(function(pp){return{x:pp.x*scale,y:pp.y*scale};});
+    return{zx:pts[0].x,zy:pts[0].y,zw:pts[1].x-pts[0].x,zh:pts[3].y-pts[0].y};
+  }
+
   function onDown(e){
-    e.preventDefault();var p=pt(e);
+    e.preventDefault();
+    var p=pt(e);
     if(!config)return;
     var zv=config.zones.filter(function(z){return z.view===activeView;});
     for(var i=0;i<zv.length;i++){
       var lidx=config.zones.indexOf(zv[i]);
       var lg=logos[lidx];
-      if(!lg||lg.rx===undefined)continue;
-      var zone=zv[i];
-      var pts=zone.pts.map(function(pp){return{x:pp.x*scale,y:pp.y*scale};});
-      var zx=pts[0].x,zy=pts[0].y,zw=pts[1].x-pts[0].x,zh=pts[3].y-pts[0].y;
-      var lx=zx+lg.rx*zw,ly=zy+lg.ry*zh,lw=lg.rw*zw,lh=lg.rh*zh;
-      // Resize (coin bas-droit)
+      if(!lg||lg.rx===undefined||lg.rw===undefined)continue;
+      var z=getZ(zv[i]);
+      var lx=z.zx+lg.rx*z.zw, ly=z.zy+lg.ry*z.zh;
+      var lw=lg.rw*z.zw, lh=lg.rh*z.zh;
       if(Math.abs(p.x-(lx+lw))<HANDLE&&Math.abs(p.y-(ly+lh))<HANDLE){
         activeZoneIdx=lidx;
-        resizing={idx:lidx,startX:p.x,startW:lw,startH:lh,aspect:lw/(lh||1),zx:zx,zy:zy,zw:zw,zh:zh};
+        resizing={idx:lidx,startX:p.x,startW:lw,aspect:lw/(lh||1),zw:z.zw,zh:z.zh};
         renderCanvas();return;
       }
-      // Move (intérieur du logo)
       if(p.x>=lx&&p.x<=lx+lw&&p.y>=ly&&p.y<=ly+lh){
         activeZoneIdx=lidx;
-        dragging={idx:lidx,offX:p.x-lx,offY:p.y-ly,zx:zx,zy:zy,zw:zw,zh:zh,lw:lw,lh:lh};
+        dragging={idx:lidx,offX:p.x-lx,offY:p.y-ly,zx:z.zx,zy:z.zy,zw:z.zw,zh:z.zh,lw:lw,lh:lh};
         renderCanvas();return;
       }
     }
   }
 
   function onMove(e){
-    e.preventDefault();var p=pt(e);
+    if(!dragging&&!resizing)return;
+    e.preventDefault();
+    var p=pt(e);
     if(dragging){
       var lg=logos[dragging.idx];
-      var zx=dragging.zx,zy=dragging.zy,zw=dragging.zw,zh=dragging.zh;
-      var lw=dragging.lw,lh=dragging.lh;
-      var nx=Math.max(zx,Math.min(zx+zw-lw, p.x-dragging.offX));
-      var ny=Math.max(zy,Math.min(zy+zh-lh, p.y-dragging.offY));
-      lg.rx=(nx-zx)/zw;
-      lg.ry=(ny-zy)/zh;
+      var nx=Math.max(dragging.zx,Math.min(dragging.zx+dragging.zw-dragging.lw,p.x-dragging.offX));
+      var ny=Math.max(dragging.zy,Math.min(dragging.zy+dragging.zh-dragging.lh,p.y-dragging.offY));
+      lg.rx=(nx-dragging.zx)/dragging.zw;
+      lg.ry=(ny-dragging.zy)/dragging.zh;
       renderCanvas();return;
     }
     if(resizing){
       var lg=logos[resizing.idx];
-      var zw=resizing.zw,zh=resizing.zh;
-      var nw=Math.max(20,Math.min(zw, resizing.startW+(p.x-resizing.startX)));
-      lg.rw=nw/zw;
-      lg.rh=(nw/resizing.aspect)/zh;
+      var nw=Math.max(8,Math.min(resizing.zw,resizing.startW+(p.x-resizing.startX)));
+      lg.rw=nw/resizing.zw;
+      lg.rh=(nw/resizing.aspect)/resizing.zh;
       renderCanvas();return;
     }
-    // Curseur
+  }
+
+  function onUp(){dragging=null;resizing=null;}
+
+  function onHover(e){
+    if(dragging||resizing)return;
+    var p=pt(e);
     var found=false;
     if(config){
       var zv=config.zones.filter(function(z){return z.view===activeView;});
       for(var i=0;i<zv.length;i++){
         var lidx=config.zones.indexOf(zv[i]);
         var lg=logos[lidx];if(!lg||lg.rx===undefined)continue;
-        var zone=zv[i];
-        var pts=zone.pts.map(function(pp){return{x:pp.x*scale,y:pp.y*scale};});
-        var zx=pts[0].x,zy=pts[0].y,zw=pts[1].x-pts[0].x,zh=pts[3].y-pts[0].y;
-        var lx=zx+lg.rx*zw,ly=zy+lg.ry*zh,lw=lg.rw*zw,lh=lg.rh*zh;
+        var z=getZ(zv[i]);
+        var lx=z.zx+lg.rx*z.zw,ly=z.zy+lg.ry*z.zh,lw=lg.rw*z.zw,lh=lg.rh*z.zh;
         if(Math.abs(p.x-(lx+lw))<HANDLE&&Math.abs(p.y-(ly+lh))<HANDLE){cv.style.cursor='se-resize';found=true;break;}
-        if(p.x>=lx&&p.x<=lx+lw&&p.y>=ly&&p.y<=ly+lh){cv.style.cursor='move';found=true;break;}
+        if(p.x>=lx&&p.x<=lx+lw&&p.y>=ly&&p.y<=ly+lh){cv.style.cursor='grab';found=true;break;}
       }
     }
     if(!found)cv.style.cursor='default';
   }
-  function onUp(){dragging=null;resizing=null;}
 
   cv.addEventListener('mousedown',onDown);
+  cv.addEventListener('mousemove',onHover);
   document.addEventListener('mousemove',onMove);
   document.addEventListener('mouseup',onUp);
   cv.addEventListener('touchstart',onDown,{passive:false});
@@ -520,6 +529,7 @@ function bindCanvas(){
 
   cv._unbind=function(){
     cv.removeEventListener('mousedown',onDown);
+    cv.removeEventListener('mousemove',onHover);
     document.removeEventListener('mousemove',onMove);
     document.removeEventListener('mouseup',onUp);
     cv.removeEventListener('touchstart',onDown);
@@ -527,6 +537,7 @@ function bindCanvas(){
     document.removeEventListener('touchend',onUp);
   };
 }
+
 
 // ── UPLOAD ───────────────────────────────────────────────────────────────────
 function onLogoUpload(input){
