@@ -202,7 +202,7 @@ body{font-family:'Inter',sans-serif;background:#fff;color:#1a1a1a;font-size:14px
         <div class="step-summary" id="ssum2"></div>
       </div>
       <div class="step-body" id="sbody2">
-        <div class="zones-hint">Plusieurs zones possibles — le logo s'applique sur chacune.</div>
+        <div class="zones-hint">Plusieurs zones possibles &mdash; le logo s&apos;applique sur chacune.</div>
         <div class="zones-list" id="zonesList"></div>
       </div>
     </div>
