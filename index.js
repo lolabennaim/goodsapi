@@ -432,40 +432,55 @@ function bindCanvas(){
       var zone=zv[i];
       var pts=zone.pts.map(function(pp){return{x:pp.x*scale,y:pp.y*scale};});
       var zx=pts[0].x,zy=pts[0].y,zw=pts[1].x-pts[0].x,zh=pts[3].y-pts[0].y;
-      // Recalcul coords pixel depuis relatif (source de vérité)
       var lx=zx+lg.rx*zw,ly=zy+lg.ry*zh,lw=lg.rw*zw,lh=lg.rh*zh;
-      lg.x=lx;lg.y=ly;lg.w=lw;lg.h=lh;
-      lg._zx=zx;lg._zy=zy;lg._zw=zw;lg._zh=zh;
+      // Resize (coin bas-droit)
       if(Math.abs(p.x-(lx+lw))<HANDLE&&Math.abs(p.y-(ly+lh))<HANDLE){
-        activeZoneIdx=lidx;resizing={idx:lidx,startX:p.x,startY:p.y,startW:lw,startH:lh,aspect:lw/(lh||1)};renderCanvas();return;
+        activeZoneIdx=lidx;
+        resizing={idx:lidx,startX:p.x,startW:lw,startH:lh,aspect:lw/(lh||1),zx:zx,zy:zy,zw:zw,zh:zh};
+        renderCanvas();return;
       }
+      // Move (intérieur du logo)
       if(p.x>=lx&&p.x<=lx+lw&&p.y>=ly&&p.y<=ly+lh){
-        activeZoneIdx=lidx;dragging={idx:lidx,offX:p.x-lx,offY:p.y-ly};renderCanvas();return;
+        activeZoneIdx=lidx;
+        dragging={idx:lidx,offX:p.x-lx,offY:p.y-ly,zx:zx,zy:zy,zw:zw,zh:zh,lw:lw,lh:lh};
+        renderCanvas();return;
       }
     }
   }
+
   function onMove(e){
     e.preventDefault();var p=pt(e);
     if(dragging){
       var lg=logos[dragging.idx];
-      var nx=Math.max(lg._zx,Math.min(lg._zx+lg._zw-lg.w,p.x-dragging.offX));
-      var ny=Math.max(lg._zy,Math.min(lg._zy+lg._zh-lg.h,p.y-dragging.offY));
-      lg.rx=(nx-lg._zx)/lg._zw;lg.ry=(ny-lg._zy)/lg._zh;
+      var zx=dragging.zx,zy=dragging.zy,zw=dragging.zw,zh=dragging.zh;
+      var lw=dragging.lw,lh=dragging.lh;
+      var nx=Math.max(zx,Math.min(zx+zw-lw, p.x-dragging.offX));
+      var ny=Math.max(zy,Math.min(zy+zh-lh, p.y-dragging.offY));
+      lg.rx=(nx-zx)/zw;
+      lg.ry=(ny-zy)/zh;
       renderCanvas();return;
     }
     if(resizing){
       var lg=logos[resizing.idx];
-      var nw=Math.max(20,Math.min(lg._zw,resizing.startW+(p.x-resizing.startX)));
-      lg.rw=nw/lg._zw;lg.rh=(nw/resizing.aspect)/lg._zh;
+      var zw=resizing.zw,zh=resizing.zh;
+      var nw=Math.max(20,Math.min(zw, resizing.startW+(p.x-resizing.startX)));
+      lg.rw=nw/zw;
+      lg.rh=(nw/resizing.aspect)/zh;
       renderCanvas();return;
     }
+    // Curseur
     var found=false;
     if(config){
       var zv=config.zones.filter(function(z){return z.view===activeView;});
       for(var i=0;i<zv.length;i++){
-        var lg=logos[config.zones.indexOf(zv[i])];if(!lg||lg.x===undefined)continue;
-        if(Math.abs(p.x-(lg.x+lg.w))<HANDLE&&Math.abs(p.y-(lg.y+lg.h))<HANDLE){cv.style.cursor='se-resize';found=true;break;}
-        if(p.x>=lg.x&&p.x<=lg.x+lg.w&&p.y>=lg.y&&p.y<=lg.y+lg.h){cv.style.cursor='move';found=true;break;}
+        var lidx=config.zones.indexOf(zv[i]);
+        var lg=logos[lidx];if(!lg||lg.rx===undefined)continue;
+        var zone=zv[i];
+        var pts=zone.pts.map(function(pp){return{x:pp.x*scale,y:pp.y*scale};});
+        var zx=pts[0].x,zy=pts[0].y,zw=pts[1].x-pts[0].x,zh=pts[3].y-pts[0].y;
+        var lx=zx+lg.rx*zw,ly=zy+lg.ry*zh,lw=lg.rw*zw,lh=lg.rh*zh;
+        if(Math.abs(p.x-(lx+lw))<HANDLE&&Math.abs(p.y-(ly+lh))<HANDLE){cv.style.cursor='se-resize';found=true;break;}
+        if(p.x>=lx&&p.x<=lx+lw&&p.y>=ly&&p.y<=ly+lh){cv.style.cursor='move';found=true;break;}
       }
     }
     if(!found)cv.style.cursor='default';
