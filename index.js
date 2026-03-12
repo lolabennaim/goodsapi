@@ -157,7 +157,7 @@ body{font-family:'Inter',sans-serif;background:#fff;color:#1a1a1a;font-size:14px
           <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="#ccc" stroke-width="1.5"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
           <span>Chargement…</span>
         </div>
-        <canvas id="cv" style="display:none"></canvas>
+        <canvas id="cv" style="display:none;position:absolute;inset:0;pointer-events:auto;z-index:2"></canvas>
         <div class="loading-overlay" id="loadingOverlay" style="display:none"><div class="sp"></div></div>
       </div>
       <div class="img-thumbs" id="imgThumbs"></div>
@@ -337,25 +337,36 @@ function buildThumbs(views){
   });
   updateThumbActive();
 }
-function switchView(v){activeView=v;updateThumbActive();renderCanvas();}
+function switchView(v){activeView=v;updateThumbActive();sizeCanvas();renderCanvas();}
 function updateThumbActive(){
   document.querySelectorAll('.img-thumb').forEach(function(t){t.classList.toggle('active',t.dataset.view===activeView);});
 }
 
 // ── CANVAS ───────────────────────────────────────────────────────────────────
-function renderCanvas(){
+function sizeCanvas(){
   var im=imgCache[activeView];
-  if(!im){cv.style.display='none';document.getElementById('imgPlaceholder').style.display='flex';return;}
-  document.getElementById('imgPlaceholder').style.display='none';
-  cv.style.display='block';
+  if(!im)return;
   var wrap=document.getElementById('imgWrap');
   var maxW=wrap.clientWidth||400,maxH=wrap.clientHeight||400;
   scale=Math.min(maxW/im.naturalWidth,maxH/im.naturalHeight);
   var w=Math.round(im.naturalWidth*scale),h=Math.round(im.naturalHeight*scale);
   var dpr=window.devicePixelRatio||1;
-  cv.width=w*dpr;cv.height=h*dpr;
-  cv.style.width=w+'px';cv.style.height=h+'px';
-  ctx=cv.getContext('2d');ctx.scale(dpr,dpr);
+  if(cv.width!==w*dpr||cv.height!==h*dpr){
+    cv.width=w*dpr;cv.height=h*dpr;
+    cv.style.width=w+'px';cv.style.height=h+'px';
+  }
+  ctx=cv.getContext('2d');
+}
+
+function renderCanvas(){
+  var im=imgCache[activeView];
+  if(!im){cv.style.display='none';document.getElementById('imgPlaceholder').style.display='flex';return;}
+  document.getElementById('imgPlaceholder').style.display='none';
+  cv.style.display='block';
+  sizeCanvas();
+  var dpr=window.devicePixelRatio||1;
+  var w=cv.width/dpr, h=cv.height/dpr;
+  ctx.setTransform(dpr,0,0,dpr,0,0);
   ctx.drawImage(im,0,0,w,h);
 
   config.zones.forEach(function(zone,idx){
@@ -418,8 +429,8 @@ function bindCanvas(){
   if(cv._unbind)cv._unbind();
   function pt(e){
     var r=cv.getBoundingClientRect();
-    if(e.touches)return{x:e.touches[0].clientX-r.left,y:e.touches[0].clientY-r.top};
-    return{x:e.clientX-r.left,y:e.clientY-r.top};
+    if(e.touches)return{x:(e.touches[0].clientX-r.left),y:(e.touches[0].clientY-r.top)};
+    return{x:(e.clientX-r.left),y:(e.clientY-r.top)};
   }
   function onDown(e){
     e.preventDefault();var p=pt(e);
