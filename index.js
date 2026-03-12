@@ -486,11 +486,21 @@ function bindCanvas(){
     if(!found)cv.style.cursor='default';
   }
   function onUp(){dragging=null;resizing=null;}
-  cv.addEventListener('mousedown',onDown);cv.addEventListener('mousemove',onMove);cv.addEventListener('mouseup',onUp);
-  cv.addEventListener('touchstart',onDown,{passive:false});cv.addEventListener('touchmove',onMove,{passive:false});cv.addEventListener('touchend',onUp);
+
+  cv.addEventListener('mousedown',onDown);
+  document.addEventListener('mousemove',onMove);
+  document.addEventListener('mouseup',onUp);
+  cv.addEventListener('touchstart',onDown,{passive:false});
+  document.addEventListener('touchmove',onMove,{passive:false});
+  document.addEventListener('touchend',onUp);
+
   cv._unbind=function(){
-    cv.removeEventListener('mousedown',onDown);cv.removeEventListener('mousemove',onMove);cv.removeEventListener('mouseup',onUp);
-    cv.removeEventListener('touchstart',onDown);cv.removeEventListener('touchmove',onMove);cv.removeEventListener('touchend',onUp);
+    cv.removeEventListener('mousedown',onDown);
+    document.removeEventListener('mousemove',onMove);
+    document.removeEventListener('mouseup',onUp);
+    cv.removeEventListener('touchstart',onDown);
+    document.removeEventListener('touchmove',onMove);
+    document.removeEventListener('touchend',onUp);
   };
 }
 
