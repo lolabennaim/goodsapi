@@ -416,23 +416,22 @@ function renderCanvas(){
 
 function initLogoPos(idx,zx,zy,zw,zh){
   var lg=logos[idx];if(!lg||!lg.imgEl)return;
-  // Toujours recalculer
   var natW=lg.imgEl.naturalWidth||200;
   var natH=lg.imgEl.naturalHeight||200;
-  var aspect=natW/natH;
-  // Logo = 70% de la largeur de zone max, centré
-  var pw=zw*0.70;
-  var ph=pw/aspect;
-  // Si trop haut, contraindre par hauteur
-  if(ph>zh*0.70){ph=zh*0.70;pw=ph*aspect;}
-  // Clamp absolu
-  if(pw>zw){pw=zw;ph=pw/aspect;}
-  if(ph>zh){ph=zh;pw=ph*aspect;}
-  lg.rw=pw/zw;
-  lg.rh=ph/zh;
-  lg.rx=(1-lg.rw)/2;
-  lg.ry=(1-lg.rh)/2;
-  console.log('initLogoPos idx='+idx, 'zw='+Math.round(zw),'zh='+Math.round(zh),'rw='+lg.rw.toFixed(2),'rh='+lg.rh.toFixed(2),'aspect='+aspect.toFixed(2));
+  var aspect=natW/natH; // <1 = portrait, >1 = paysage, =1 = carré
+  var pw,ph;
+  if(aspect>=1){
+    // Paysage/carré : contraindre par largeur
+    pw=zw*0.70; ph=pw/aspect;
+    if(ph>zh*0.70){ph=zh*0.70; pw=ph*aspect;}
+  } else {
+    // Portrait : contraindre par hauteur
+    ph=zh*0.70; pw=ph*aspect;
+    if(pw>zw*0.70){pw=zw*0.70; ph=pw/aspect;}
+  }
+  pw=Math.min(pw,zw); ph=Math.min(ph,zh);
+  lg.rw=pw/zw; lg.rh=ph/zh;
+  lg.rx=(1-lg.rw)/2; lg.ry=(1-lg.rh)/2;
 }
 
 // ── BIND CANVAS ──────────────────────────────────────────────────────────────
