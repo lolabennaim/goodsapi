@@ -421,13 +421,11 @@ function initLogoPos(idx,zx,zy,zw,zh){
   var aspect=natW/natH; // <1 = portrait, >1 = paysage, =1 = carré
   var pw,ph;
   if(aspect>=1){
-    // Paysage/carré : contraindre par largeur
-    pw=zw*0.70; ph=pw/aspect;
-    if(ph>zh*0.70){ph=zh*0.70; pw=ph*aspect;}
+    pw=zw*0.95; ph=pw/aspect;
+    if(ph>zh*0.95){ph=zh*0.95; pw=ph*aspect;}
   } else {
-    // Portrait : contraindre par hauteur
-    ph=zh*0.70; pw=ph*aspect;
-    if(pw>zw*0.70){pw=zw*0.70; ph=pw/aspect;}
+    ph=zh*0.95; pw=ph*aspect;
+    if(pw>zw*0.95){pw=zw*0.95; ph=pw/aspect;}
   }
   pw=Math.min(pw,zw); ph=Math.min(ph,zh);
   lg.rw=pw/zw; lg.rh=ph/zh;
@@ -573,6 +571,14 @@ function doRenderPDF(file,b64){
 }
 
 function onLogoReady(file,b64,imgEl){
+  // Vérifier le format — refuser portrait
+  var natW=imgEl.naturalWidth||imgEl.width||1;
+  var natH=imgEl.naturalHeight||imgEl.height||1;
+  if(natH>natW*1.2){
+    document.getElementById('loadingOverlay').style.display='none';
+    alert('⚠️ Ton logo est en format portrait (plus haut que large).\n\nPour un meilleur résultat, utilise un logo en format carré ou paysage (largeur ≥ hauteur).\n\nTu peux le recadrer dans ton logiciel graphique avant d\'uploader.');
+    return;
+  }
   sharedLogo={file:file,b64:b64,imgEl:imgEl};
   document.getElementById('loadingOverlay').style.display='none';
   // Appliquer à toutes zones déjà sélectionnées
