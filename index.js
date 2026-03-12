@@ -386,7 +386,14 @@ function renderCanvas(){
 
     if(hasLogo){
       var lg=logos[idx];
-      if(lg.rw===undefined)initLogoPos(idx,zx,zy,zw,zh);
+      if(lg.rw===undefined){
+        if(lg.imgEl.complete&&lg.imgEl.naturalWidth>0){
+          initLogoPos(idx,zx,zy,zw,zh);
+        } else {
+          lg.imgEl.onload=function(){initLogoPos(idx,zx,zy,zw,zh);renderCanvas();};
+        }
+      }
+      if(lg.rw===undefined)return; // pas encore prêt
       var lx=zx+lg.rx*zw,ly=zy+lg.ry*zh,lw=lg.rw*zw,lh=lg.rh*zh;
       lg.x=lx;lg.y=ly;lg.w=lw;lg.h=lh;
       lg._zx=zx;lg._zy=zy;lg._zw=zw;lg._zh=zh;
@@ -409,19 +416,23 @@ function renderCanvas(){
 
 function initLogoPos(idx,zx,zy,zw,zh){
   var lg=logos[idx];if(!lg||!lg.imgEl)return;
+  // Toujours recalculer
   var natW=lg.imgEl.naturalWidth||200;
   var natH=lg.imgEl.naturalHeight||200;
-  var a=natW/natH;
-  // Taille cible : 65% de la zone, ratio préservé
-  var pw=zw*0.65;
-  var ph=pw/a;
-  if(ph>zh*0.65){ph=zh*0.65;pw=ph*a;}
-  // Clamp pour ne pas dépasser la zone
-  pw=Math.min(pw,zw);ph=Math.min(ph,zh);
+  var aspect=natW/natH;
+  // Logo = 70% de la largeur de zone max, centré
+  var pw=zw*0.70;
+  var ph=pw/aspect;
+  // Si trop haut, contraindre par hauteur
+  if(ph>zh*0.70){ph=zh*0.70;pw=ph*aspect;}
+  // Clamp absolu
+  if(pw>zw){pw=zw;ph=pw/aspect;}
+  if(ph>zh){ph=zh;pw=ph*aspect;}
   lg.rw=pw/zw;
   lg.rh=ph/zh;
   lg.rx=(1-lg.rw)/2;
   lg.ry=(1-lg.rh)/2;
+  console.log('initLogoPos idx='+idx, 'zw='+Math.round(zw),'zh='+Math.round(zh),'rw='+lg.rw.toFixed(2),'rh='+lg.rh.toFixed(2),'aspect='+aspect.toFixed(2));
 }
 
 // ── BIND CANVAS ──────────────────────────────────────────────────────────────
@@ -572,7 +583,7 @@ function onLogoReady(file,b64,imgEl){
 
 function applyLogoToZone(idx){
   if(!sharedLogo)return;
-  logos[idx]={file:sharedLogo.file,b64:sharedLogo.b64,imgEl:sharedLogo.imgEl,rw:undefined};
+  logos[idx]={file:sharedLogo.file,b64:sharedLogo.b64,imgEl:sharedLogo.imgEl,rw:undefined,rx:undefined,ry:undefined,rh:undefined};
 }
 
 function removeAllLogos(){
