@@ -1060,12 +1060,14 @@ async function deleteProduct(sku){
   res.send(html);
 });
 
+
 app.get('/admin/zones/:sku', async (req, res) => {
   const sku = req.params.sku;
   const { rows } = await pool.query('SELECT * FROM products WHERE sku=$1',[sku]).catch(()=>({rows:[]}));
   const prod = rows[0];
   const config = prod ? (prod.config||{}) : {};
-  const configJson = JSON.stringify(config).replace(/`/g,'\\`');
+  const configJson = JSON.stringify(config).replace(/`/g,'\\`').replace(/\$/g,'\\$');
+  const prodName = prod ? (prod.name||sku) : sku;
   const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
@@ -1075,100 +1077,213 @@ app.get('/admin/zones/:sku', async (req, res) => {
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',sans-serif;background:#f5f0ff;color:#1a1a1a;min-height:100vh}
-.header{background:#3b1f6e;color:#fff;padding:16px 28px;display:flex;align-items:center;gap:16px}
-.header a{color:rgba(255,255,255,.7);text-decoration:none;font-size:13px}
+body{font-family:'Inter',sans-serif;background:#1a1025;color:#1a1a1a;min-height:100vh;overflow:hidden}
+.header{background:#3b1f6e;color:#fff;padding:0 20px;height:52px;display:flex;align-items:center;gap:14px;flex-shrink:0}
+.header a{color:rgba(255,255,255,.6);text-decoration:none;font-size:13px;white-space:nowrap}
 .header a:hover{color:#fff}
-.header h1{font-size:18px;font-weight:700;flex:1}
-.layout{display:flex;height:calc(100vh - 56px)}
-.panel-left{width:340px;flex-shrink:0;background:#fff;border-right:1px solid #e8e4f0;overflow-y:auto;padding:20px}
-.canvas-area{flex:1;background:#ede9e3;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
-canvas#editorCv{cursor:crosshair;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.15)}
-.section{margin-bottom:20px}
-.section-title{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px}
-.btn{padding:9px 16px;border-radius:8px;border:none;background:#3b1f6e;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .12s;width:100%;margin-bottom:8px}
-.btn:hover{background:#4e2a8e}
-.btn-outline{background:#f0e9ff;color:#3b1f6e}
-.btn-outline:hover{background:#e4d8ff}
-.btn-danger{background:#fee2e2;color:#dc2626}
-.btn-danger:hover{background:#fecaca}
-.btn-green{background:#22c55e;color:#fff}
-.btn-green:hover{background:#16a34a}
-.zone-list{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
-.zone-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;border:1.5px solid #ebebeb;cursor:pointer;background:#fff;transition:all .12s}
-.zone-row:hover{border-color:#c4b5fd}
-.zone-row.active{border-color:#3b1f6e;background:#f5f0ff}
-.zone-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
-.zone-info{flex:1}
-.zone-name-text{font-size:13px;font-weight:600}
-.zone-sub-text{font-size:11px;color:#aaa}
-.zone-del{background:none;border:none;cursor:pointer;color:#ccc;font-size:16px;padding:0;line-height:1}
-.zone-del:hover{color:#dc2626}
+.header h1{font-size:15px;font-weight:700;flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.hbtn{padding:7px 16px;border-radius:7px;border:none;font-family:'Inter',sans-serif;font-size:13px;font-weight:600;cursor:pointer;transition:all .12s;white-space:nowrap}
+.hbtn-save{background:#22c55e;color:#fff}
+.hbtn-save:hover{background:#16a34a}
+.hbtn-preview{background:rgba(255,255,255,.15);color:#fff}
+.hbtn-preview:hover{background:rgba(255,255,255,.25)}
+.app{display:flex;height:calc(100vh - 52px)}
+
+/* TOOLBAR */
+.toolbar{width:52px;background:#2d1b69;display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:4px;flex-shrink:0}
+.tool{width:36px;height:36px;border-radius:8px;border:none;background:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px;color:rgba(255,255,255,.5);transition:all .12s;position:relative}
+.tool:hover{background:rgba(255,255,255,.1);color:#fff}
+.tool.active{background:rgba(255,255,255,.2);color:#fff}
+.tool-sep{width:28px;height:1px;background:rgba(255,255,255,.1);margin:4px 0}
+.tool-tip{position:absolute;left:44px;background:#1a1a1a;color:#fff;font-size:11px;font-weight:600;padding:4px 8px;border-radius:5px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .1s;z-index:100}
+.tool:hover .tool-tip{opacity:1}
+
+/* PANEL */
+.panel{width:260px;background:#fff;flex-shrink:0;display:flex;flex-direction:column;overflow:hidden;border-right:1px solid #e8e4f0}
+.panel-tabs{display:flex;border-bottom:1px solid #f0f0f0;flex-shrink:0}
+.ptab{flex:1;padding:10px 0;text-align:center;font-size:12px;font-weight:600;color:#aaa;cursor:pointer;border-bottom:2px solid transparent;transition:all .12s}
+.ptab.active{color:#3b1f6e;border-bottom-color:#3b1f6e}
+.panel-body{flex:1;overflow-y:auto;padding:14px}
+.section-title{font-size:10px;font-weight:700;color:#bbb;text-transform:uppercase;letter-spacing:.08em;margin-bottom:8px;margin-top:14px}
+.section-title:first-child{margin-top:0}
+
+/* VIEWS */
+.view-tabs{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:10px}
+.vtab{padding:4px 10px;border-radius:15px;border:1.5px solid #ebebeb;font-size:11px;font-weight:600;cursor:pointer;color:#888;background:#fff;transition:all .1s}
+.vtab.active{border-color:#3b1f6e;color:#3b1f6e;background:#f5f0ff}
+.vtab-add{border-style:dashed}
+.upload-zone{border:2px dashed #d8d8d8;border-radius:8px;padding:12px;text-align:center;cursor:pointer;background:#fafafa;position:relative;transition:all .12s;margin-bottom:10px}
+.upload-zone:hover{border-color:#3b1f6e;background:#f5f0ff}
+.upload-zone input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.upload-zone span{font-size:11px;color:#aaa}
+
+/* ZONES LIST */
+.zone-item{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;border:1.5px solid #ebebeb;cursor:pointer;background:#fff;transition:all .12s;margin-bottom:5px}
+.zone-item:hover{border-color:#c4b5fd}
+.zone-item.active{border-color:#3b1f6e;background:#f5f0ff}
+.zdot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.zinfo{flex:1;min-width:0}
+.zname{font-size:12px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.zsub{font-size:10px;color:#aaa}
+.zdel{background:none;border:none;cursor:pointer;color:#ddd;font-size:15px;padding:0;line-height:1;flex-shrink:0}
+.zdel:hover{color:#dc2626}
+
+/* ZONE PROPS */
 .field{margin-bottom:10px}
-.field label{display:block;font-size:11px;font-weight:600;color:#888;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
-.field input,.field select{width:100%;padding:8px 10px;border:1.5px solid #ebebeb;border-radius:7px;font-size:13px;font-family:'Inter',sans-serif;outline:none}
+.field label{display:block;font-size:10px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px}
+.field input,.field select{width:100%;padding:7px 10px;border:1.5px solid #ebebeb;border-radius:7px;font-size:13px;font-family:'Inter',sans-serif;outline:none;transition:border-color .12s}
 .field input:focus,.field select:focus{border-color:#3b1f6e}
 .field-row{display:flex;gap:8px}
 .field-row .field{flex:1}
-.upload-img{border:2px dashed #d8d8d8;border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all .15s;background:#fafafa;position:relative}
-.upload-img:hover{border-color:#3b1f6e;background:#f5f0ff}
-.upload-img input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
-.upload-img-label{font-size:12px;color:#888}
-.view-tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
-.view-tab{padding:5px 12px;border-radius:20px;border:1.5px solid #ebebeb;font-size:12px;font-weight:600;cursor:pointer;color:#888;background:#fff;transition:all .1s}
-.view-tab.active{border-color:#3b1f6e;color:#3b1f6e;background:#f5f0ff}
-.hint{font-size:11px;color:#aaa;margin-bottom:10px;line-height:1.5}
-.toast{position:fixed;bottom:20px;right:20px;background:#22c55e;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;display:none;z-index:999}
-.tech-checks{display:flex;flex-wrap:wrap;gap:6px}
-.tech-check{display:flex;align-items:center;gap:4px;font-size:12px;padding:4px 8px;border-radius:6px;border:1.5px solid #ebebeb;cursor:pointer;background:#fff;transition:all .1s}
-.tech-check.on{border-color:#3b1f6e;background:#f5f0ff;color:#3b1f6e;font-weight:600}
+.tech-grid{display:flex;flex-wrap:wrap;gap:4px}
+.tech-tag{padding:3px 8px;border-radius:12px;border:1.5px solid #ebebeb;font-size:11px;cursor:pointer;color:#888;background:#fff;transition:all .1s;user-select:none}
+.tech-tag.on{border-color:#3b1f6e;color:#3b1f6e;background:#f5f0ff;font-weight:600}
+.apply-btn{width:100%;padding:8px;border-radius:7px;border:none;background:#3b1f6e;color:#fff;font-size:12px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;margin-top:8px;transition:background .12s}
+.apply-btn:hover{background:#4e2a8e}
+
+/* ALIGN TOOLS */
+.align-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:8px}
+.align-btn{padding:6px;border-radius:6px;border:1.5px solid #ebebeb;background:#fff;cursor:pointer;font-size:14px;text-align:center;transition:all .12s}
+.align-btn:hover{border-color:#3b1f6e;background:#f5f0ff}
+.snap-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:7px;border:1.5px solid #ebebeb;margin-bottom:5px;font-size:12px;cursor:pointer;transition:all .12s}
+.snap-row:hover{border-color:#3b1f6e}
+.snap-row input[type=checkbox]{accent-color:#3b1f6e;width:14px;height:14px;flex-shrink:0}
+
+/* CANVAS */
+.canvas-wrap{flex:1;display:flex;align-items:center;justify-content:center;background:#1a1025;overflow:hidden;position:relative}
+#cv{cursor:crosshair;image-rendering:auto}
+.canvas-info{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.6);color:#fff;font-size:11px;padding:5px 12px;border-radius:20px;pointer-events:none;opacity:0;transition:opacity .3s}
+.canvas-info.show{opacity:1}
+.zoom-controls{position:absolute;bottom:12px;right:16px;display:flex;gap:6px}
+.zoom-btn{width:30px;height:30px;border-radius:6px;border:none;background:rgba(255,255,255,.15);color:#fff;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:background .12s}
+.zoom-btn:hover{background:rgba(255,255,255,.25)}
+
+.toast{position:fixed;bottom:20px;right:20px;background:#22c55e;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;display:none;z-index:9999;box-shadow:0 4px 16px rgba(0,0,0,.2)}
 </style>
 </head>
 <body>
+
 <div class="header">
-  <a href="/admin">← Admin</a>
-  <h1>Zones de marquage — ${prod ? (prod.name||sku) : sku}</h1>
-  <button class="btn" style="width:auto;margin:0" onclick="saveAll()">Enregistrer tout</button>
+  <a href="/admin">&#8592; Admin</a>
+  <h1>&#9632; Zones — ${prodName}</h1>
+  <button class="hbtn hbtn-preview" onclick="window.open('/configurateur?sku=${sku}','_blank')">Apercu</button>
+  <button class="hbtn hbtn-save" onclick="saveAll()">Enregistrer</button>
 </div>
-<div class="layout">
+
+<div class="app">
+
+  <!-- TOOLBAR -->
+  <div class="toolbar">
+    <button class="tool active" id="toolSelect" onclick="setTool('select')" title="Selectionner">
+      <span>&#9654;</span><span class="tool-tip">Selectionner (V)</span>
+    </button>
+    <button class="tool" id="toolDraw" onclick="setTool('draw')" title="Dessiner">
+      <span>&#9633;</span><span class="tool-tip">Dessiner zone (D)</span>
+    </button>
+    <div class="tool-sep"></div>
+    <button class="tool" onclick="duplicateZone()" title="Dupliquer">
+      <span>&#10064;</span><span class="tool-tip">Dupliquer (Ctrl+D)</span>
+    </button>
+    <button class="tool" onclick="deleteActiveZone()" title="Supprimer">
+      <span>&#128465;</span><span class="tool-tip">Supprimer (Del)</span>
+    </button>
+    <div class="tool-sep"></div>
+    <button class="tool" onclick="zoomIn()"><span>+</span><span class="tool-tip">Zoom +</span></button>
+    <button class="tool" onclick="zoomOut()"><span>-</span><span class="tool-tip">Zoom -</span></button>
+    <button class="tool" onclick="zoomFit()"><span>&#9654;</span><span class="tool-tip">Ajuster</span></button>
+  </div>
 
   <!-- PANEL GAUCHE -->
-  <div class="panel-left">
+  <div class="panel">
+    <div class="panel-tabs">
+      <div class="ptab active" onclick="showTab('zones')" id="tab-zones">Zones</div>
+      <div class="ptab" onclick="showTab('props')" id="tab-props">Proprietes</div>
+      <div class="ptab" onclick="showTab('align')" id="tab-align">Alignement</div>
+    </div>
 
-    <div class="section">
-      <div class="section-title">Image produit</div>
+    <!-- TAB ZONES -->
+    <div class="panel-body" id="body-zones">
+      <div class="section-title">Vues</div>
       <div class="view-tabs" id="viewTabs"></div>
-      <div class="upload-img">
-        <input type="file" accept="image/*" onchange="uploadViewImg(this)">
-        <div class="upload-img-label">Uploader une image de vue (PNG/JPG)</div>
+      <div class="upload-zone">
+        <input type="file" accept="image/*" onchange="uploadImg(this)">
+        <span>Uploader image (PNG/JPG)</span>
       </div>
-    </div>
 
-    <div class="section">
       <div class="section-title">Zones de marquage</div>
-      <div class="hint">Clique + glisse sur l'image pour dessiner une zone rectangulaire.</div>
-      <div class="zone-list" id="zoneList"></div>
+      <div id="zoneList"></div>
+      <button onclick="addZoneManual()" style="width:100%;padding:7px;border-radius:7px;border:1.5px dashed #c4b5fd;background:#f5f0ff;color:#3b1f6e;font-size:12px;font-weight:600;cursor:pointer;margin-top:4px">+ Nouvelle zone</button>
     </div>
 
-    <div class="section" id="zoneEditPanel" style="display:none">
-      <div class="section-title">Modifier la zone sélectionnée</div>
-      <div class="field"><label>Nom</label><input id="zName" placeholder="Ex: Recto poitrine" /></div>
-      <div class="field-row">
-        <div class="field"><label>Vue</label><input id="zView" placeholder="Recto" /></div>
-        <div class="field"><label>Max mm</label><input id="zMaxMm" type="number" placeholder="80" /></div>
+    <!-- TAB PROPS -->
+    <div class="panel-body" id="body-props" style="display:none">
+      <div id="propsEmpty" style="text-align:center;padding:30px 0;color:#aaa;font-size:13px">Selectionnez une zone</div>
+      <div id="propsForm" style="display:none">
+        <div class="field"><label>Nom</label><input id="pName" oninput="liveUpdate()" /></div>
+        <div class="field-row">
+          <div class="field"><label>Vue</label><input id="pView" oninput="liveUpdate()" /></div>
+          <div class="field"><label>Max mm</label><input id="pMaxMm" type="number" oninput="liveUpdate()" /></div>
+        </div>
+        <div class="field">
+          <label>Position X</label>
+          <input id="pX" type="number" step="1" oninput="updateZoneFromProps()" />
+        </div>
+        <div class="field">
+          <label>Position Y</label>
+          <input id="pY" type="number" step="1" oninput="updateZoneFromProps()" />
+        </div>
+        <div class="field-row">
+          <div class="field"><label>Largeur</label><input id="pW" type="number" step="1" oninput="updateZoneFromProps()" /></div>
+          <div class="field"><label>Hauteur</label><input id="pH" type="number" step="1" oninput="updateZoneFromProps()" /></div>
+        </div>
+        <div class="field">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+            <label style="margin:0">Ratio carre</label>
+            <input type="checkbox" id="pSquare" onchange="enforceSquare()" style="accent-color:#3b1f6e;width:14px;height:14px">
+          </div>
+        </div>
+        <div class="field">
+          <label>Techniques</label>
+          <div class="tech-grid" id="techGrid"></div>
+        </div>
+        <button class="apply-btn" onclick="applyProps()">Appliquer</button>
       </div>
-      <div class="field">
-        <label>Techniques disponibles</label>
-        <div class="tech-checks" id="techChecks"></div>
-      </div>
-      <button class="btn btn-outline" onclick="applyZoneEdit()">Appliquer</button>
     </div>
 
+    <!-- TAB ALIGN -->
+    <div class="panel-body" id="body-align" style="display:none">
+      <div class="section-title">Aligner les zones</div>
+      <div class="align-grid">
+        <button class="align-btn" onclick="alignZones('left')" title="Aligner gauche">&#9724;&#8592;</button>
+        <button class="align-btn" onclick="alignZones('centerH')" title="Centrer horizontal">&#8596;</button>
+        <button class="align-btn" onclick="alignZones('right')" title="Aligner droite">&#8594;&#9724;</button>
+        <button class="align-btn" onclick="alignZones('top')" title="Aligner haut">&#8593;</button>
+        <button class="align-btn" onclick="alignZones('centerV')" title="Centrer vertical">&#8597;</button>
+        <button class="align-btn" onclick="alignZones('bottom')" title="Aligner bas">&#8595;</button>
+      </div>
+      <div class="section-title">Distribuer</div>
+      <div class="align-grid">
+        <button class="align-btn" onclick="distributeZones('h')" title="Espacer horizontal">&#8596;&#8596;</button>
+        <button class="align-btn" onclick="distributeZones('v')" title="Espacer vertical">&#8597;&#8597;</button>
+        <button class="align-btn" onclick="makeSameSize()" title="Meme taille">&#9635;</button>
+      </div>
+      <div class="section-title">Options snap</div>
+      <label class="snap-row"><input type="checkbox" id="snapGrid" checked> Snap grille (10px)</label>
+      <label class="snap-row"><input type="checkbox" id="snapZones" checked> Snap autres zones</label>
+      <div class="section-title">Meme taille que</div>
+      <div id="sizeRefList"></div>
+    </div>
   </div>
 
   <!-- CANVAS -->
-  <div class="canvas-area" id="canvasArea">
-    <canvas id="editorCv"></canvas>
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="cv"></canvas>
+    <div class="canvas-info" id="canvasInfo"></div>
+    <div class="zoom-controls">
+      <button class="zoom-btn" onclick="zoomOut()">-</button>
+      <button class="zoom-btn" onclick="zoomFit()" style="font-size:10px;font-weight:700">FIT</button>
+      <button class="zoom-btn" onclick="zoomIn()">+</button>
+    </div>
   </div>
 
 </div>
@@ -1179,54 +1294,84 @@ var SKU = '${sku}';
 var config = JSON.parse(\`${configJson}\`);
 if(!config.zones) config.zones = [];
 if(!config.viewImgs) config.viewImgs = {};
-if(!config.product) config.product = {sku:SKU, name:'${prod ? (prod.name||sku) : sku}'};
+if(!config.product) config.product = {sku:SKU, name:'${prodName}'};
 
-var COLORS = ['#5b3de8','#e03e3e','#f97316','#1d9e5c','#0ea5e9','#a855f7','#ec4899'];
+var COLORS = ['#5b3de8','#e03e3e','#f97316','#1d9e5c','#0ea5e9','#a855f7','#ec4899','#14b8a6'];
 var TECHS = ['seri_auto','seri_manuelle','transfert_seri','transfert_num','broderie','gravure_laser','tampon','sublimation'];
-var TECHNAMES = {seri_auto:'Seri auto',seri_manuelle:'Seri manuelle',transfert_seri:'Transfert seri',transfert_num:'Transfert num',broderie:'Broderie',gravure_laser:'Gravure laser',tampon:'Tampographie',sublimation:'Sublimation'};
+var TECHNAMES = {seri_auto:'Seri auto',seri_manuelle:'Seri manuelle',transfert_seri:'Transfert seri',transfert_num:'Transfert num',broderie:'Broderie',gravure_laser:'Gravure laser',tampon:'Tampo',sublimation:'Sublimation'};
 
-var cv = document.getElementById('editorCv');
+var cv = document.getElementById('cv');
 var ctx = cv.getContext('2d');
 var activeView = null;
 var imgCache = {};
-var activeZoneIdx = null;
-var drawing = false;
-var drawStart = null;
-var drawRect = null;
-var scale = 1;
+var activeIdx = null;
+var tool = 'select'; // 'select' | 'draw'
+var zoom = 1;
+var panX = 0, panY = 0;
+var imgW = 800, imgH = 800; // taille image naturelle
 
-// ── INIT ────────────────────────────────────────────────────────────────────
+// State interactions
+var isDragging = false, isResizing = false, isDrawing = false;
+var dragStart = null, resizeHandle = null;
+var drawStart = null;
+var origZone = null; // copie au début du drag
+
+var HANDLE = 10; // px écran
+var SNAP = 10; // grille
+var TECHS_DEFAULT = ['seri_auto','transfert_seri','transfert_num','broderie'];
+
+// ── INIT ─────────────────────────────────────────────────────────────────────
 function init(){
   var views = getViews();
-  if(!views.length) views = ['Recto'];
+  if(!views.length){ views = ['Recto']; config.viewImgs['Recto'] = null; }
   buildViewTabs(views);
   switchView(views[0]);
+  bindCanvas();
+  bindKeys();
+  window.addEventListener('resize', function(){ renderCanvas(); });
 }
 
 function getViews(){
   var v = Object.keys(config.viewImgs||{});
   config.zones.forEach(function(z){ if(z.view && v.indexOf(z.view)<0) v.push(z.view); });
-  return v;
+  return v.length ? v : ['Recto'];
 }
 
-// ── VUES ────────────────────────────────────────────────────────────────────
+// ── TABS ─────────────────────────────────────────────────────────────────────
+function showTab(name){
+  ['zones','props','align'].forEach(function(t){
+    document.getElementById('tab-'+t).classList.toggle('active', t===name);
+    document.getElementById('body-'+t).style.display = t===name ? 'block' : 'none';
+  });
+  if(name==='align') buildSizeRefList();
+}
+
+// ── TOOL ─────────────────────────────────────────────────────────────────────
+function setTool(t){
+  tool = t;
+  document.getElementById('toolSelect').classList.toggle('active', t==='select');
+  document.getElementById('toolDraw').classList.toggle('active', t==='draw');
+  cv.style.cursor = t==='draw' ? 'crosshair' : 'default';
+}
+
+// ── VIEWS ─────────────────────────────────────────────────────────────────────
 function buildViewTabs(views){
   var el = document.getElementById('viewTabs');
   el.innerHTML = '';
   views.forEach(function(v){
     var btn = document.createElement('button');
-    btn.className = 'view-tab' + (v===activeView?' active':'');
+    btn.className = 'vtab' + (v===activeView?' active':'');
     btn.textContent = v;
     btn.onclick = function(){ switchView(v); };
     el.appendChild(btn);
   });
-  // Bouton + nouvelle vue
   var add = document.createElement('button');
-  add.className = 'view-tab';
+  add.className = 'vtab vtab-add';
   add.textContent = '+ Vue';
   add.onclick = function(){
     var name = prompt('Nom de la vue (ex: Verso, Manche G)');
-    if(!name) return;
+    if(!name || name.trim()==='') return;
+    name = name.trim();
     if(!config.viewImgs[name]) config.viewImgs[name] = null;
     buildViewTabs(getViews());
     switchView(name);
@@ -1236,273 +1381,696 @@ function buildViewTabs(views){
 
 function switchView(v){
   activeView = v;
-  activeZoneIdx = null;
-  document.querySelectorAll('.view-tab').forEach(function(t){ t.classList.toggle('active', t.textContent===v); });
-  renderEditor();
+  activeIdx = null;
+  document.querySelectorAll('.vtab').forEach(function(t){ t.classList.toggle('active', t.textContent===v); });
+  var im = imgCache[v];
+  if(im){ imgW=im.naturalWidth; imgH=im.naturalHeight; }
+  else { imgW=800; imgH=800; }
+  zoomFit();
   buildZoneList();
-  buildZoneEditPanel();
+  updatePropsPanel();
 }
 
-// ── UPLOAD IMAGE ─────────────────────────────────────────────────────────────
-function uploadViewImg(input){
+// ── UPLOAD IMAGE ──────────────────────────────────────────────────────────────
+function uploadImg(input){
   if(!input.files[0]) return;
   var r = new FileReader();
   r.onload = function(e){
-    config.viewImgs[activeView] = e.target.result;
+    var b64 = e.target.result;
+    config.viewImgs[activeView] = b64;
     var im = new Image();
-    im.onload = function(){ imgCache[activeView] = im; renderEditor(); };
-    im.src = e.target.result;
+    im.onload = function(){
+      imgCache[activeView] = im;
+      imgW = im.naturalWidth; imgH = im.naturalHeight;
+      zoomFit();
+    };
+    im.src = b64;
   };
   r.readAsDataURL(input.files[0]);
   input.value = '';
 }
 
-// ── CANVAS RENDER ────────────────────────────────────────────────────────────
-function renderEditor(){
-  var area = document.getElementById('canvasArea');
-  var maxW = area.clientWidth - 40;
-  var maxH = area.clientHeight - 40;
-  var im = imgCache[activeView];
+// ── CANVAS COORDS ─────────────────────────────────────────────────────────────
+// canvas coords → image coords
+function c2i(cx, cy){ return { x:(cx-panX)/zoom, y:(cy-panY)/zoom }; }
+// image coords → canvas coords
+function i2c(ix, iy){ return { x:ix*zoom+panX, y:iy*zoom+panY }; }
 
-  if(!im){
-    cv.width = Math.min(600, maxW);
-    cv.height = Math.min(600, maxH);
-    ctx.fillStyle = '#ede9e3';
-    ctx.fillRect(0,0,cv.width,cv.height);
+function getMouseCanvas(e){
+  var r = cv.getBoundingClientRect();
+  return { x: e.clientX-r.left, y: e.clientY-r.top };
+}
+
+// ── ZOOM ──────────────────────────────────────────────────────────────────────
+function zoomFit(){
+  var wrap = document.getElementById('canvasWrap');
+  var ww = wrap.clientWidth - 60;
+  var wh = wrap.clientHeight - 60;
+  var scaleW = ww/imgW, scaleH = wh/imgH;
+  zoom = Math.min(scaleW, scaleH, 2);
+  var cw = Math.round(imgW*zoom), ch = Math.round(imgH*zoom);
+  panX = (ww - cw)/2 + 30;
+  panY = (wh - ch)/2 + 30;
+  resizeCanvas();
+  renderCanvas();
+}
+
+function zoomIn(){ zoom = Math.min(zoom*1.2, 8); renderCanvas(); }
+function zoomOut(){ zoom = Math.max(zoom/1.2, 0.1); renderCanvas(); }
+
+function resizeCanvas(){
+  var wrap = document.getElementById('canvasWrap');
+  cv.width = wrap.clientWidth;
+  cv.height = wrap.clientHeight;
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+function renderCanvas(){
+  if(cv.width === 0) resizeCanvas();
+  ctx.clearRect(0,0,cv.width,cv.height);
+
+  // Fond
+  ctx.fillStyle = '#1a1025';
+  ctx.fillRect(0,0,cv.width,cv.height);
+
+  // Image ou placeholder
+  var im = imgCache[activeView];
+  var cw = Math.round(imgW*zoom), ch = Math.round(imgH*zoom);
+
+  // Ombre
+  ctx.save();
+  ctx.shadowColor = 'rgba(0,0,0,.5)';
+  ctx.shadowBlur = 20;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(panX, panY, cw, ch);
+  ctx.restore();
+
+  if(im){
+    ctx.drawImage(im, panX, panY, cw, ch);
+  } else {
+    ctx.fillStyle = '#f0ede8';
+    ctx.fillRect(panX, panY, cw, ch);
     ctx.fillStyle = '#bbb';
     ctx.font = '14px Inter';
     ctx.textAlign = 'center';
-    ctx.fillText('Uploadez une image de vue', cv.width/2, cv.height/2);
-    scale = 1;
-  } else {
-    scale = Math.min(maxW/im.naturalWidth, maxH/im.naturalHeight, 1);
-    cv.width = Math.round(im.naturalWidth * scale);
-    cv.height = Math.round(im.naturalHeight * scale);
-    ctx.drawImage(im, 0, 0, cv.width, cv.height);
+    ctx.textBaseline = 'middle';
+    ctx.fillText('Uploade une image de vue', panX+cw/2, panY+ch/2);
   }
 
-  // Dessiner les zones
+  // Grille légère si snap activé
+  if(document.getElementById('snapGrid') && document.getElementById('snapGrid').checked && zoom > 0.8){
+    var gridStep = SNAP * zoom;
+    ctx.save();
+    ctx.strokeStyle = 'rgba(255,255,255,.04)';
+    ctx.lineWidth = 0.5;
+    for(var gx=0; gx<imgW; gx+=SNAP){
+      var cx = panX + gx*zoom;
+      ctx.beginPath(); ctx.moveTo(cx,panY); ctx.lineTo(cx,panY+ch); ctx.stroke();
+    }
+    for(var gy=0; gy<imgH; gy+=SNAP){
+      var cy2 = panY + gy*zoom;
+      ctx.beginPath(); ctx.moveTo(panX,cy2); ctx.lineTo(panX+cw,cy2); ctx.stroke();
+    }
+    ctx.restore();
+  }
+
+  // Zones
   config.zones.forEach(function(zone, idx){
     if(zone.view !== activeView || !zone.pts || zone.pts.length < 4) return;
-    var pts = zone.pts.map(function(p){ return{x:p.x*scale, y:p.y*scale}; });
-    var zx=pts[0].x, zy=pts[0].y, zw=pts[1].x-pts[0].x, zh=pts[3].y-pts[0].y;
+    var z = getZoneRect(zone);
+    var sc = i2c(z.x, z.y);
+    var sw = z.w * zoom, sh = z.h * zoom;
     var color = COLORS[idx % COLORS.length];
-    var isActive = idx === activeZoneIdx;
+    var isActive = idx === activeIdx;
 
     ctx.save();
+    ctx.beginPath(); ctx.rect(panX, panY, cw, ch); ctx.clip();
+
+    // Fill
+    ctx.fillStyle = color + (isActive ? '30' : '18');
+    ctx.fillRect(sc.x, sc.y, sw, sh);
+
+    // Border
     ctx.strokeStyle = color;
-    ctx.lineWidth = isActive ? 2.5 : 1.5;
+    ctx.lineWidth = isActive ? 2 : 1.5;
     ctx.setLineDash(isActive ? [] : [5,4]);
-    ctx.strokeRect(zx, zy, zw, zh);
+    ctx.strokeRect(sc.x, sc.y, sw, sh);
     ctx.setLineDash([]);
-    ctx.fillStyle = color + (isActive ? '22' : '11');
-    ctx.fillRect(zx, zy, zw, zh);
 
     // Label
     ctx.fillStyle = color;
-    ctx.font = 'bold 11px Inter';
+    ctx.font = 'bold '+(Math.max(10, Math.min(13, zoom*14)))+'px Inter';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText((idx+1)+'. '+(zone.name||'Zone'), zx+4, zy+4);
+    var label = (idx+1)+'. '+(zone.name||'Zone');
+    ctx.fillText(label, sc.x+4, sc.y+4);
 
-    // Poignée resize
     if(isActive){
-      ctx.fillStyle = color;
-      ctx.fillRect(zx+zw-8, zy+zh-8, 8, 8);
+      // Poignées resize (8 points)
+      var handles = getHandlePositions(sc.x, sc.y, sw, sh);
+      handles.forEach(function(h){
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(h.x-HANDLE/2, h.y-HANDLE/2, HANDLE, HANDLE);
+        ctx.strokeStyle = color;
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(h.x-HANDLE/2, h.y-HANDLE/2, HANDLE, HANDLE);
+      });
     }
     ctx.restore();
   });
 
   // Zone en cours de dessin
-  if(drawRect){
+  if(isDrawing && drawRect){
+    var sc2 = i2c(drawRect.x, drawRect.y);
     ctx.save();
     ctx.strokeStyle = '#3b1f6e';
     ctx.lineWidth = 2;
     ctx.setLineDash([5,4]);
-    ctx.strokeRect(drawRect.x, drawRect.y, drawRect.w, drawRect.h);
-    ctx.fillStyle = 'rgba(59,31,110,.08)';
-    ctx.fillRect(drawRect.x, drawRect.y, drawRect.w, drawRect.h);
+    ctx.strokeRect(sc2.x, sc2.y, drawRect.w*zoom, drawRect.h*zoom);
+    ctx.fillStyle = 'rgba(59,31,110,.1)';
+    ctx.fillRect(sc2.x, sc2.y, drawRect.w*zoom, drawRect.h*zoom);
     ctx.setLineDash([]);
     ctx.restore();
+    showInfo(Math.round(drawRect.w)+'×'+Math.round(drawRect.h)+'px');
   }
 }
 
-// ── DRAW EVENTS ──────────────────────────────────────────────────────────────
-function pt(e){
-  var r = cv.getBoundingClientRect();
-  return { x: e.clientX - r.left, y: e.clientY - r.top };
+function getZoneRect(zone){
+  var pts = zone.pts;
+  return { x:pts[0].x, y:pts[0].y, w:pts[1].x-pts[0].x, h:pts[3].y-pts[0].y };
 }
 
-cv.addEventListener('mousedown', function(e){
-  var p = pt(e);
-  // Check si click sur zone existante
-  var hit = false;
+function setZoneRect(zone, x, y, w, h){
+  zone.pts = [{x:x,y:y},{x:x+w,y:y},{x:x+w,y:y+h},{x:x,y:y+h}];
+}
+
+function getHandlePositions(x, y, w, h){
+  return [
+    {x:x,     y:y,     id:'nw'},
+    {x:x+w/2, y:y,     id:'n'},
+    {x:x+w,   y:y,     id:'ne'},
+    {x:x+w,   y:y+h/2, id:'e'},
+    {x:x+w,   y:y+h,   id:'se'},
+    {x:x+w/2, y:y+h,   id:'s'},
+    {x:x,     y:y+h,   id:'sw'},
+    {x:x,     y:y+h/2, id:'w'}
+  ];
+}
+
+// ── SNAP ──────────────────────────────────────────────────────────────────────
+function snapVal(v){
+  if(!document.getElementById('snapGrid').checked) return v;
+  return Math.round(v / SNAP) * SNAP;
+}
+
+function snapZoneEdges(x, y, w, h, excludeIdx){
+  if(!document.getElementById('snapZones').checked) return {x,y,w,h};
+  var threshold = 8 / zoom;
+  config.zones.forEach(function(z, i){
+    if(i===excludeIdx||z.view!==activeView||!z.pts) return;
+    var r = getZoneRect(z);
+    // snap left to left/right
+    if(Math.abs(x - r.x) < threshold) x = r.x;
+    if(Math.abs(x - (r.x+r.w)) < threshold) x = r.x+r.w;
+    // snap right to left/right
+    if(Math.abs((x+w) - r.x) < threshold) x = r.x-w;
+    if(Math.abs((x+w) - (r.x+r.w)) < threshold) x = r.x+r.w-w;
+    // snap top
+    if(Math.abs(y - r.y) < threshold) y = r.y;
+    if(Math.abs(y - (r.y+r.h)) < threshold) y = r.y+r.h;
+    // snap bottom
+    if(Math.abs((y+h) - r.y) < threshold) y = r.y-h;
+    if(Math.abs((y+h) - (r.y+r.h)) < threshold) y = r.y+r.h-h;
+  });
+  return {x,y,w,h};
+}
+
+// ── HIT TEST ──────────────────────────────────────────────────────────────────
+function hitHandle(mx, my){
+  if(activeIdx===null) return null;
+  var zone = config.zones[activeIdx];
+  if(!zone||zone.view!==activeView) return null;
+  var z = getZoneRect(zone);
+  var sc = i2c(z.x,z.y);
+  var sw=z.w*zoom, sh=z.h*zoom;
+  var handles = getHandlePositions(sc.x,sc.y,sw,sh);
+  for(var i=0;i<handles.length;i++){
+    var h = handles[i];
+    if(Math.abs(mx-h.x)<HANDLE && Math.abs(my-h.y)<HANDLE) return h.id;
+  }
+  return null;
+}
+
+function hitZone(mx, my){
   for(var i=config.zones.length-1; i>=0; i--){
-    var zone = config.zones[i];
-    if(zone.view !== activeView || !zone.pts) continue;
-    var pts = zone.pts.map(function(pp){ return{x:pp.x*scale,y:pp.y*scale}; });
-    var zx=pts[0].x,zy=pts[0].y,zw=pts[1].x-pts[0].x,zh=pts[3].y-pts[0].y;
-    if(p.x>=zx&&p.x<=zx+zw&&p.y>=zy&&p.y<=zy+zh){
-      activeZoneIdx = i;
-      hit = true;
-      renderEditor();
-      buildZoneList();
-      buildZoneEditPanel();
-      break;
+    var z2 = config.zones[i];
+    if(z2.view!==activeView||!z2.pts) continue;
+    var z = getZoneRect(z2);
+    var sc = i2c(z.x,z.y);
+    var sw=z.w*zoom, sh=z.h*zoom;
+    if(mx>=sc.x&&mx<=sc.x+sw&&my>=sc.y&&my<=sc.y+sh) return i;
+  }
+  return -1;
+}
+
+// ── BIND CANVAS ───────────────────────────────────────────────────────────────
+var drawRect = null;
+
+function bindCanvas(){
+  cv.addEventListener('mousedown', onDown);
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  cv.addEventListener('wheel', function(e){
+    e.preventDefault();
+    var factor = e.deltaY < 0 ? 1.1 : 0.9;
+    var mp = getMouseCanvas(e);
+    var before = c2i(mp.x, mp.y);
+    zoom = Math.min(Math.max(zoom*factor, 0.1), 8);
+    var after = i2c(before.x, before.y);
+    panX += mp.x - after.x;
+    panY += mp.y - after.y;
+    renderCanvas();
+  }, {passive:false});
+}
+
+function onDown(e){
+  var m = getMouseCanvas(e);
+  if(tool==='draw'){
+    var p = c2i(m.x, m.y);
+    isDrawing = true;
+    drawStart = p;
+    drawRect = {x:p.x, y:p.y, w:0, h:0};
+    return;
+  }
+  // SELECT tool
+  var handle = hitHandle(m.x, m.y);
+  if(handle){
+    isResizing = true;
+    resizeHandle = handle;
+    var z = getZoneRect(config.zones[activeIdx]);
+    origZone = {x:z.x, y:z.y, w:z.w, h:z.h};
+    dragStart = c2i(m.x, m.y);
+    return;
+  }
+  var hit = hitZone(m.x, m.y);
+  if(hit >= 0){
+    activeIdx = hit;
+    isDragging = true;
+    var z2 = getZoneRect(config.zones[activeIdx]);
+    origZone = {x:z2.x,y:z2.y,w:z2.w,h:z2.h};
+    dragStart = c2i(m.x, m.y);
+    buildZoneList();
+    updatePropsPanel();
+    renderCanvas();
+    return;
+  }
+  // Click vide → désélectionner
+  activeIdx = null;
+  buildZoneList();
+  updatePropsPanel();
+  renderCanvas();
+}
+
+function onMove(e){
+  var m = getMouseCanvas(e);
+  var p = c2i(m.x, m.y);
+
+  if(isDrawing && drawStart){
+    var sq = e.shiftKey;
+    var dx = p.x - drawStart.x, dy = p.y - drawStart.y;
+    if(sq){ var s=Math.min(Math.abs(dx),Math.abs(dy)); dx=Math.sign(dx)*s; dy=Math.sign(dy)*s; }
+    drawRect = {
+      x: Math.min(drawStart.x, drawStart.x+dx),
+      y: Math.min(drawStart.y, drawStart.y+dy),
+      w: Math.abs(dx), h: Math.abs(dy)
+    };
+    renderCanvas();
+    return;
+  }
+
+  if(isDragging && dragStart && activeIdx!==null){
+    var dx2 = p.x - dragStart.x, dy2 = p.y - dragStart.y;
+    var nx = origZone.x+dx2, ny = origZone.y+dy2;
+    nx = snapVal(nx); ny = snapVal(ny);
+    var snapped = snapZoneEdges(nx, ny, origZone.w, origZone.h, activeIdx);
+    nx = Math.max(0, Math.min(imgW-origZone.w, snapped.x));
+    ny = Math.max(0, Math.min(imgH-origZone.h, snapped.y));
+    setZoneRect(config.zones[activeIdx], nx, ny, origZone.w, origZone.h);
+    updatePropsInputs();
+    renderCanvas();
+    showInfo(Math.round(nx)+', '+Math.round(ny));
+    return;
+  }
+
+  if(isResizing && resizeHandle && activeIdx!==null){
+    var o = origZone;
+    var dx3=p.x-dragStart.x, dy3=p.y-dragStart.y;
+    var nx2=o.x, ny2=o.y, nw=o.w, nh=o.h;
+    var sq2 = document.getElementById('pSquare') && document.getElementById('pSquare').checked;
+
+    if(resizeHandle.indexOf('e')>=0){ nw=Math.max(10,o.w+dx3); }
+    if(resizeHandle.indexOf('w')>=0){ nx2=o.x+dx3; nw=Math.max(10,o.w-dx3); }
+    if(resizeHandle.indexOf('s')>=0){ nh=Math.max(10,o.h+dy3); }
+    if(resizeHandle.indexOf('n')>=0){ ny2=o.y+dy3; nh=Math.max(10,o.h-dy3); }
+
+    nw=snapVal(nw); nh=snapVal(nh);
+    if(sq2){ var side=Math.max(nw,nh); nw=side; nh=side; }
+
+    setZoneRect(config.zones[activeIdx], snapVal(nx2), snapVal(ny2), nw, nh);
+    updatePropsInputs();
+    renderCanvas();
+    showInfo(Math.round(nw)+'x'+Math.round(nh));
+    return;
+  }
+
+  // Curseur hover
+  if(tool==='select'){
+    var h2 = hitHandle(m.x, m.y);
+    if(h2){
+      var cursors = {nw:'nw-resize',n:'n-resize',ne:'ne-resize',e:'e-resize',se:'se-resize',s:'s-resize',sw:'sw-resize',w:'w-resize'};
+      cv.style.cursor = cursors[h2]||'pointer';
+    } else if(hitZone(m.x,m.y)>=0){
+      cv.style.cursor = 'move';
+    } else {
+      cv.style.cursor = 'default';
     }
   }
-  if(!hit){
-    // Commencer dessin
-    drawing = true;
-    drawStart = p;
-    drawRect = {x:p.x,y:p.y,w:0,h:0};
-    activeZoneIdx = null;
-    buildZoneEditPanel();
+}
+
+function onUp(e){
+  if(isDrawing && drawRect && drawRect.w>5 && drawRect.h>5){
+    var sq = e.shiftKey || (document.getElementById('pSquare') && document.getElementById('pSquare').checked);
+    var x=snapVal(drawRect.x), y=snapVal(drawRect.y);
+    var w=snapVal(drawRect.w), h=snapVal(drawRect.h);
+    if(sq){ var s2=Math.max(w,h); w=s2; h=s2; }
+    var z3 = {
+      name:'Zone '+(config.zones.length+1),
+      view:activeView, maxMm:80,
+      techniques:TECHS_DEFAULT.slice(),
+      pts:[{x:x,y:y},{x:x+w,y:y},{x:x+w,y:y+h},{x:x,y:y+h}]
+    };
+    config.zones.push(z3);
+    activeIdx = config.zones.length-1;
+    buildZoneList(); updatePropsPanel();
+    showTab('props');
   }
-});
+  isDrawing=false; isDragging=false; isResizing=false;
+  drawRect=null; drawStart=null; dragStart=null; origZone=null;
+  hideInfo();
+  renderCanvas();
+}
 
-document.addEventListener('mousemove', function(e){
-  if(!drawing) return;
-  var p = pt(e);
-  drawRect = {
-    x: Math.min(drawStart.x, p.x),
-    y: Math.min(drawStart.y, p.y),
-    w: Math.abs(p.x - drawStart.x),
-    h: Math.abs(p.y - drawStart.y)
-  };
-  renderEditor();
-});
+// ── KEYBOARD ──────────────────────────────────────────────────────────────────
+function bindKeys(){
+  document.addEventListener('keydown', function(e){
+    if(e.target.tagName==='INPUT'||e.target.tagName==='TEXTAREA') return;
+    if(e.key==='v'||e.key==='V') setTool('select');
+    if(e.key==='d'||e.key==='D') setTool('draw');
+    if((e.key==='Delete'||e.key==='Backspace') && activeIdx!==null) deleteActiveZone();
+    if(e.ctrlKey && (e.key==='d'||e.key==='D')){ e.preventDefault(); duplicateZone(); }
+    if(e.key==='Escape'){ activeIdx=null; buildZoneList(); updatePropsPanel(); renderCanvas(); }
+    // Arrow nudge
+    if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].indexOf(e.key)>=0 && activeIdx!==null){
+      e.preventDefault();
+      var step = e.shiftKey ? 10 : 1;
+      var z5 = getZoneRect(config.zones[activeIdx]);
+      var nx3=z5.x, ny3=z5.y;
+      if(e.key==='ArrowLeft') nx3-=step;
+      if(e.key==='ArrowRight') nx3+=step;
+      if(e.key==='ArrowUp') ny3-=step;
+      if(e.key==='ArrowDown') ny3+=step;
+      setZoneRect(config.zones[activeIdx], nx3, ny3, z5.w, z5.h);
+      updatePropsInputs(); renderCanvas();
+    }
+  });
+}
 
-document.addEventListener('mouseup', function(e){
-  if(!drawing) return;
-  drawing = false;
-  if(!drawRect || drawRect.w < 10 || drawRect.h < 10){ drawRect=null; renderEditor(); return; }
+// ── ZONE ACTIONS ──────────────────────────────────────────────────────────────
+function addZoneManual(){
+  var cx = imgW/2-50, cy = imgH/2-50;
+  config.zones.push({name:'Zone '+(config.zones.length+1),view:activeView,maxMm:80,techniques:TECHS_DEFAULT.slice(),pts:[{x:cx,y:cy},{x:cx+100,y:cy},{x:cx+100,y:cy+100},{x:cx,y:cy+100}]});
+  activeIdx = config.zones.length-1;
+  buildZoneList(); updatePropsPanel(); renderCanvas();
+  showTab('props');
+}
 
-  // Convertir en coords relatives (0-1)
-  var imgW = imgCache[activeView] ? imgCache[activeView].naturalWidth : cv.width;
-  var imgH = imgCache[activeView] ? imgCache[activeView].naturalHeight : cv.height;
-  var rx = drawRect.x / scale / imgW;
-  var ry = drawRect.y / scale / imgH;
-  var rw = drawRect.w / scale / imgW;
-  var rh = drawRect.h / scale / imgH;
+function duplicateZone(){
+  if(activeIdx===null) return;
+  var z = JSON.parse(JSON.stringify(config.zones[activeIdx]));
+  z.name = z.name+' copie';
+  z.pts = z.pts.map(function(p){ return{x:p.x+20,y:p.y+20}; });
+  config.zones.push(z);
+  activeIdx=config.zones.length-1;
+  buildZoneList(); updatePropsPanel(); renderCanvas();
+}
 
-  var newZone = {
-    name: 'Zone ' + (config.zones.length + 1),
-    view: activeView,
-    maxMm: 80,
-    techniques: ['seri_auto','transfert_seri','transfert_num','broderie'],
-    pts: [
-      {x: rx*imgW, y: ry*imgH},
-      {x: (rx+rw)*imgW, y: ry*imgH},
-      {x: (rx+rw)*imgW, y: (ry+rh)*imgH},
-      {x: rx*imgW, y: (ry+rh)*imgH}
-    ]
-  };
-  config.zones.push(newZone);
-  activeZoneIdx = config.zones.length - 1;
-  drawRect = null;
-  renderEditor();
-  buildZoneList();
-  buildZoneEditPanel();
-});
+function deleteActiveZone(){
+  if(activeIdx===null) return;
+  if(!confirm('Supprimer cette zone ?')) return;
+  config.zones.splice(activeIdx,1);
+  activeIdx = Math.min(activeIdx, config.zones.length-1);
+  if(config.zones.length===0) activeIdx=null;
+  buildZoneList(); updatePropsPanel(); renderCanvas();
+}
 
-// ── ZONE LIST ────────────────────────────────────────────────────────────────
+// ── ZONE LIST ─────────────────────────────────────────────────────────────────
 function buildZoneList(){
   var el = document.getElementById('zoneList');
-  el.innerHTML = '';
-  config.zones.forEach(function(zone, idx){
-    var div = document.createElement('div');
-    div.className = 'zone-row' + (idx===activeZoneIdx?' active':'');
-    div.innerHTML =
-      '<div class="zone-dot" style="background:'+COLORS[idx%COLORS.length]+'"></div>'
-      +'<div class="zone-info"><div class="zone-name-text">'+(zone.name||'Zone '+(idx+1))+'</div>'
-      +'<div class="zone-sub-text">'+(zone.view||'')+(zone.maxMm?' · '+zone.maxMm+'mm':'')+'</div></div>'
-      +'<button class="zone-del" onclick="deleteZone('+idx+',event)">×</button>';
-    div.onclick = function(){ activeZoneIdx=idx; renderEditor(); buildZoneList(); buildZoneEditPanel(); };
+  el.innerHTML='';
+  config.zones.forEach(function(zone,idx){
+    if(zone.view!==activeView) return;
+    var div=document.createElement('div');
+    div.className='zone-item'+(idx===activeIdx?' active':'');
+    div.innerHTML='<div class="zdot" style="background:'+COLORS[idx%COLORS.length]+'"></div>'
+      +'<div class="zinfo"><div class="zname">'+(zone.name||'Zone '+(idx+1))+'</div>'
+      +'<div class="zsub">'+(zone.maxMm||80)+'mm · '+(zone.techniques||[]).length+' tech.</div></div>'
+      +'<button class="zdel" onclick="deleteZoneAt('+idx+',event)">x</button>';
+    div.onclick=function(){ activeIdx=idx; buildZoneList(); updatePropsPanel(); renderCanvas(); showTab('props'); };
     el.appendChild(div);
   });
 }
 
-function deleteZone(idx, e){
+function deleteZoneAt(idx,e){
   e.stopPropagation();
-  if(!confirm('Supprimer cette zone ?')) return;
-  config.zones.splice(idx, 1);
-  if(activeZoneIdx >= config.zones.length) activeZoneIdx = config.zones.length - 1;
-  renderEditor(); buildZoneList(); buildZoneEditPanel();
+  if(!confirm('Supprimer ?')) return;
+  config.zones.splice(idx,1);
+  if(activeIdx>=config.zones.length) activeIdx=config.zones.length-1;
+  if(config.zones.length===0) activeIdx=null;
+  buildZoneList(); updatePropsPanel(); renderCanvas();
 }
 
-// ── ZONE EDIT PANEL ──────────────────────────────────────────────────────────
-function buildZoneEditPanel(){
-  var panel = document.getElementById('zoneEditPanel');
-  if(activeZoneIdx === null || activeZoneIdx >= config.zones.length){ panel.style.display='none'; return; }
-  panel.style.display = 'block';
-  var zone = config.zones[activeZoneIdx];
-  document.getElementById('zName').value = zone.name||'';
-  document.getElementById('zView').value = zone.view||activeView;
-  document.getElementById('zMaxMm').value = zone.maxMm||80;
-
+// ── PROPS PANEL ───────────────────────────────────────────────────────────────
+function updatePropsPanel(){
+  var empty = document.getElementById('propsEmpty');
+  var form = document.getElementById('propsForm');
+  if(activeIdx===null||activeIdx>=config.zones.length){
+    empty.style.display='block'; form.style.display='none'; return;
+  }
+  empty.style.display='none'; form.style.display='block';
+  var zone = config.zones[activeIdx];
+  document.getElementById('pName').value = zone.name||'';
+  document.getElementById('pView').value = zone.view||activeView;
+  document.getElementById('pMaxMm').value = zone.maxMm||80;
+  updatePropsInputs();
   // Techniques
-  var tc = document.getElementById('techChecks');
-  tc.innerHTML = '';
+  var tg = document.getElementById('techGrid');
+  tg.innerHTML='';
   TECHS.forEach(function(t){
-    var on = (zone.techniques||[]).indexOf(t) >= 0;
-    var span = document.createElement('span');
-    span.className = 'tech-check' + (on?' on':'');
-    span.textContent = TECHNAMES[t];
-    span.onclick = function(){
-      span.classList.toggle('on');
-    };
-    span.dataset.tech = t;
-    tc.appendChild(span);
+    var on = (zone.techniques||[]).indexOf(t)>=0;
+    var sp = document.createElement('span');
+    sp.className='tech-tag'+(on?' on':'');
+    sp.textContent=TECHNAMES[t];
+    sp.dataset.tech=t;
+    sp.onclick=function(){ sp.classList.toggle('on'); };
+    tg.appendChild(sp);
   });
 }
 
-function applyZoneEdit(){
-  if(activeZoneIdx === null) return;
-  var zone = config.zones[activeZoneIdx];
-  zone.name = document.getElementById('zName').value;
-  zone.view = document.getElementById('zView').value;
-  zone.maxMm = parseInt(document.getElementById('zMaxMm').value)||80;
-  zone.techniques = Array.from(document.querySelectorAll('.tech-check.on')).map(function(el){ return el.dataset.tech; });
-  renderEditor(); buildZoneList();
+function updatePropsInputs(){
+  if(activeIdx===null||activeIdx>=config.zones.length) return;
+  var z = getZoneRect(config.zones[activeIdx]);
+  document.getElementById('pX').value=Math.round(z.x);
+  document.getElementById('pY').value=Math.round(z.y);
+  document.getElementById('pW').value=Math.round(z.w);
+  document.getElementById('pH').value=Math.round(z.h);
+}
+
+function liveUpdate(){
+  if(activeIdx===null) return;
+  config.zones[activeIdx].name = document.getElementById('pName').value;
+  config.zones[activeIdx].view = document.getElementById('pView').value||activeView;
+  config.zones[activeIdx].maxMm = parseInt(document.getElementById('pMaxMm').value)||80;
+  buildZoneList(); renderCanvas();
+}
+
+function updateZoneFromProps(){
+  if(activeIdx===null) return;
+  var x=parseFloat(document.getElementById('pX').value)||0;
+  var y=parseFloat(document.getElementById('pY').value)||0;
+  var w=Math.max(10,parseFloat(document.getElementById('pW').value)||50);
+  var h=Math.max(10,parseFloat(document.getElementById('pH').value)||50);
+  setZoneRect(config.zones[activeIdx], x, y, w, h);
+  renderCanvas();
+}
+
+function enforceSquare(){
+  if(activeIdx===null) return;
+  if(document.getElementById('pSquare').checked){
+    var z=getZoneRect(config.zones[activeIdx]);
+    var s=Math.max(z.w,z.h);
+    setZoneRect(config.zones[activeIdx],z.x,z.y,s,s);
+    updatePropsInputs(); renderCanvas();
+  }
+}
+
+function applyProps(){
+  if(activeIdx===null) return;
+  var zone=config.zones[activeIdx];
+  zone.name=document.getElementById('pName').value;
+  zone.view=document.getElementById('pView').value||activeView;
+  zone.maxMm=parseInt(document.getElementById('pMaxMm').value)||80;
+  zone.techniques=Array.from(document.querySelectorAll('.tech-tag.on')).map(function(el){return el.dataset.tech;});
+  updateZoneFromProps();
+  buildZoneList(); renderCanvas();
   toast('Zone mise a jour');
+}
+
+// ── ALIGN ─────────────────────────────────────────────────────────────────────
+function getViewZones(){
+  return config.zones.map(function(z,i){return{z:z,i:i};}).filter(function(o){return o.z.view===activeView&&o.z.pts;});
+}
+
+function alignZones(type){
+  var zones = getViewZones();
+  if(zones.length<2) return;
+  var rects = zones.map(function(o){return{i:o.i,r:getZoneRect(o.z)};});
+  var ref;
+  if(type==='left') ref = Math.min.apply(null,rects.map(function(r){return r.r.x;}));
+  if(type==='right') ref = Math.max.apply(null,rects.map(function(r){return r.r.x+r.r.w;}));
+  if(type==='top') ref = Math.min.apply(null,rects.map(function(r){return r.r.y;}));
+  if(type==='bottom') ref = Math.max.apply(null,rects.map(function(r){return r.r.y+r.r.h;}));
+  if(type==='centerH') ref = rects.reduce(function(s,r){return s+r.r.x+r.r.w/2;},0)/rects.length;
+  if(type==='centerV') ref = rects.reduce(function(s,r){return s+r.r.y+r.r.h/2;},0)/rects.length;
+
+  rects.forEach(function(item){
+    var z=config.zones[item.i], r=item.r;
+    if(type==='left') setZoneRect(z,ref,r.y,r.w,r.h);
+    if(type==='right') setZoneRect(z,ref-r.w,r.y,r.w,r.h);
+    if(type==='top') setZoneRect(z,r.x,ref,r.w,r.h);
+    if(type==='bottom') setZoneRect(z,r.x,ref-r.h,r.w,r.h);
+    if(type==='centerH') setZoneRect(z,ref-r.w/2,r.y,r.w,r.h);
+    if(type==='centerV') setZoneRect(z,r.x,ref-r.h/2,r.w,r.h);
+  });
+  renderCanvas();
+}
+
+function distributeZones(axis){
+  var zones=getViewZones();
+  if(zones.length<3) return;
+  var rects=zones.map(function(o){return{i:o.i,r:getZoneRect(o.z)};});
+  if(axis==='h'){
+    rects.sort(function(a,b){return a.r.x-b.r.x;});
+    var totalW=rects.reduce(function(s,r){return s+r.r.w;},0);
+    var span=rects[rects.length-1].r.x+rects[rects.length-1].r.w-rects[0].r.x;
+    var gap=(span-totalW)/(rects.length-1);
+    var cx=rects[0].r.x;
+    rects.forEach(function(item){var r=item.r;setZoneRect(config.zones[item.i],cx,r.y,r.w,r.h);cx+=r.w+gap;});
+  } else {
+    rects.sort(function(a,b){return a.r.y-b.r.y;});
+    var totalH=rects.reduce(function(s,r){return s+r.r.h;},0);
+    var spanH=rects[rects.length-1].r.y+rects[rects.length-1].r.h-rects[0].r.y;
+    var gapH=(spanH-totalH)/(rects.length-1);
+    var cy=rects[0].r.y;
+    rects.forEach(function(item){var r=item.r;setZoneRect(config.zones[item.i],r.x,cy,r.w,r.h);cy+=r.h+gapH;});
+  }
+  renderCanvas();
+}
+
+function makeSameSize(){
+  if(activeIdx===null) return;
+  var ref=getZoneRect(config.zones[activeIdx]);
+  getViewZones().forEach(function(o){
+    var z=config.zones[o.i], r=getZoneRect(z);
+    setZoneRect(z,r.x,r.y,ref.w,ref.h);
+  });
+  renderCanvas();
+}
+
+function buildSizeRefList(){
+  var el=document.getElementById('sizeRefList');
+  el.innerHTML='';
+  getViewZones().forEach(function(o){
+    var btn=document.createElement('button');
+    btn.style.cssText='width:100%;padding:6px 10px;border-radius:7px;border:1.5px solid #ebebeb;background:#fff;font-size:12px;cursor:pointer;text-align:left;margin-bottom:4px;font-family:Inter,sans-serif';
+    btn.textContent=(o.z.name||'Zone')+(o.i===activeIdx?' (active)':'');
+    btn.onclick=function(){
+      activeIdx=o.i;
+      makeSameSize();
+      buildZoneList();
+    };
+    el.appendChild(btn);
+  });
+}
+
+// ── INFO ─────────────────────────────────────────────────────────────────────
+var infoTimer;
+function showInfo(text){
+  var el=document.getElementById('canvasInfo');
+  el.textContent=text; el.classList.add('show');
+  clearTimeout(infoTimer);
+  infoTimer=setTimeout(function(){el.classList.remove('show');},1500);
+}
+function hideInfo(){
+  clearTimeout(infoTimer);
+  document.getElementById('canvasInfo').classList.remove('show');
 }
 
 // ── SAVE ─────────────────────────────────────────────────────────────────────
 async function saveAll(){
-  var r = await fetch('/products', {
-    method: 'POST',
-    headers: {'Content-Type':'application/json'},
-    body: JSON.stringify({sku: SKU, name: config.product.name, config: config})
-  });
+  var r=await fetch('/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sku:SKU,name:config.product.name,config:config,margin:${prod ? (prod.margin||2.7) : 2.7},prix_achat:${prod ? (prod.prix_achat||0) : 0}})});
   if(r.ok) toast('Enregistre !');
-  else toast('Erreur', false);
+  else toast('Erreur lors de la sauvegarde', false);
 }
 
 function toast(msg, ok=true){
-  var t = document.getElementById('toast');
-  t.textContent = msg; t.style.background = ok ? '#22c55e' : '#ef4444'; t.style.display = 'block';
-  setTimeout(function(){ t.style.display='none'; }, 2000);
+  var t=document.getElementById('toast');
+  t.textContent=msg;t.style.background=ok?'#22c55e':'#ef4444';t.style.display='block';
+  setTimeout(function(){t.style.display='none';},2200);
 }
 
-// Charger les images depuis config
+// ── LOAD ─────────────────────────────────────────────────────────────────────
 function loadImages(){
-  var proms = Object.keys(config.viewImgs||{}).map(function(v){
-    var b64 = config.viewImgs[v];
+  var proms=Object.keys(config.viewImgs||{}).map(function(v){
+    var b64=config.viewImgs[v];
     if(!b64) return Promise.resolve();
     return new Promise(function(res){
-      var im = new Image(); im.onload=function(){ imgCache[v]=im; res(); }; im.src=b64;
+      var im=new Image();
+      im.onload=function(){imgCache[v]=im;res();};
+      im.onerror=function(){res();};
+      im.src=b64;
     });
   });
-  Promise.all(proms).then(init);
+  Promise.all(proms).then(function(){
+    var views=getViews();
+    if(views.length && imgCache[views[0]]){
+      imgW=imgCache[views[0]].naturalWidth;
+      imgH=imgCache[views[0]].naturalHeight;
+    }
+    init();
+  });
 }
-loadImages();
+
+window.addEventListener('load', function(){
+  resizeCanvas();
+  loadImages();
+});
 </script>
 </body>
 </html>`;
   res.setHeader('Content-Type','text/html; charset=utf-8');
   res.send(html);
 });
+
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log('GOODS API sur port ' + PORT));
