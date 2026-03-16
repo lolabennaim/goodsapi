@@ -991,6 +991,7 @@ body{font-family:'Inter',sans-serif;background:#f5f0ff;color:#1a1a1a;min-height:
             <td class="prix-cell">${pvMin !== '—' ? pvMin+' €/u' : '—'}<div class="calc">100 unités, seri auto</div></td>
             <td class="actions">
               <a href="/configurateur?sku=${r.sku}" target="_blank"><button class="btn btn-sm">Voir</button></a>
+              <a href="/admin/zones/${r.sku}"><button class="btn btn-sm" style="background:#f0e9ff;color:#3b1f6e">Zones</button></a>
               <button class="btn btn-sm" onclick="editProduct('${r.sku}','${r.name||''}',${pa},${m})">Modifier</button>
               <button class="btn btn-sm btn-danger" onclick="deleteProduct('${r.sku}')">Supprimer</button>
             </td>
@@ -1052,6 +1053,450 @@ async function deleteProduct(sku){
   if(r.ok){toast('Supprime');setTimeout(()=>location.reload(),1000);}
   else toast('Erreur', false);
 }
+</script>
+</body>
+</html>`;
+  res.setHeader('Content-Type','text/html; charset=utf-8');
+  res.send(html);
+});
+
+app.get('/admin/zones/:sku', async (req, res) => {
+  const sku = req.params.sku;
+  const { rows } = await pool.query('SELECT * FROM products WHERE sku=$1',[sku]).catch(()=>({rows:[]}));
+  const prod = rows[0];
+  const config = prod ? (prod.config||{}) : {};
+  const configJson = JSON.stringify(config).replace(/`/g,'\\`');
+  const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zones — ${sku}</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#f5f0ff;color:#1a1a1a;min-height:100vh}
+.header{background:#3b1f6e;color:#fff;padding:16px 28px;display:flex;align-items:center;gap:16px}
+.header a{color:rgba(255,255,255,.7);text-decoration:none;font-size:13px}
+.header a:hover{color:#fff}
+.header h1{font-size:18px;font-weight:700;flex:1}
+.layout{display:flex;height:calc(100vh - 56px)}
+.panel-left{width:340px;flex-shrink:0;background:#fff;border-right:1px solid #e8e4f0;overflow-y:auto;padding:20px}
+.canvas-area{flex:1;background:#ede9e3;display:flex;align-items:center;justify-content:center;position:relative;overflow:hidden}
+canvas#editorCv{cursor:crosshair;border-radius:8px;box-shadow:0 4px 24px rgba(0,0,0,.15)}
+.section{margin-bottom:20px}
+.section-title{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px}
+.btn{padding:9px 16px;border-radius:8px;border:none;background:#3b1f6e;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .12s;width:100%;margin-bottom:8px}
+.btn:hover{background:#4e2a8e}
+.btn-outline{background:#f0e9ff;color:#3b1f6e}
+.btn-outline:hover{background:#e4d8ff}
+.btn-danger{background:#fee2e2;color:#dc2626}
+.btn-danger:hover{background:#fecaca}
+.btn-green{background:#22c55e;color:#fff}
+.btn-green:hover{background:#16a34a}
+.zone-list{display:flex;flex-direction:column;gap:6px;margin-bottom:12px}
+.zone-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:8px;border:1.5px solid #ebebeb;cursor:pointer;background:#fff;transition:all .12s}
+.zone-row:hover{border-color:#c4b5fd}
+.zone-row.active{border-color:#3b1f6e;background:#f5f0ff}
+.zone-dot{width:10px;height:10px;border-radius:2px;flex-shrink:0}
+.zone-info{flex:1}
+.zone-name-text{font-size:13px;font-weight:600}
+.zone-sub-text{font-size:11px;color:#aaa}
+.zone-del{background:none;border:none;cursor:pointer;color:#ccc;font-size:16px;padding:0;line-height:1}
+.zone-del:hover{color:#dc2626}
+.field{margin-bottom:10px}
+.field label{display:block;font-size:11px;font-weight:600;color:#888;margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em}
+.field input,.field select{width:100%;padding:8px 10px;border:1.5px solid #ebebeb;border-radius:7px;font-size:13px;font-family:'Inter',sans-serif;outline:none}
+.field input:focus,.field select:focus{border-color:#3b1f6e}
+.field-row{display:flex;gap:8px}
+.field-row .field{flex:1}
+.upload-img{border:2px dashed #d8d8d8;border-radius:10px;padding:16px;text-align:center;cursor:pointer;transition:all .15s;background:#fafafa;position:relative}
+.upload-img:hover{border-color:#3b1f6e;background:#f5f0ff}
+.upload-img input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%;height:100%}
+.upload-img-label{font-size:12px;color:#888}
+.view-tabs{display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap}
+.view-tab{padding:5px 12px;border-radius:20px;border:1.5px solid #ebebeb;font-size:12px;font-weight:600;cursor:pointer;color:#888;background:#fff;transition:all .1s}
+.view-tab.active{border-color:#3b1f6e;color:#3b1f6e;background:#f5f0ff}
+.hint{font-size:11px;color:#aaa;margin-bottom:10px;line-height:1.5}
+.toast{position:fixed;bottom:20px;right:20px;background:#22c55e;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;display:none;z-index:999}
+.tech-checks{display:flex;flex-wrap:wrap;gap:6px}
+.tech-check{display:flex;align-items:center;gap:4px;font-size:12px;padding:4px 8px;border-radius:6px;border:1.5px solid #ebebeb;cursor:pointer;background:#fff;transition:all .1s}
+.tech-check.on{border-color:#3b1f6e;background:#f5f0ff;color:#3b1f6e;font-weight:600}
+</style>
+</head>
+<body>
+<div class="header">
+  <a href="/admin">← Admin</a>
+  <h1>Zones de marquage — ${prod ? (prod.name||sku) : sku}</h1>
+  <button class="btn" style="width:auto;margin:0" onclick="saveAll()">Enregistrer tout</button>
+</div>
+<div class="layout">
+
+  <!-- PANEL GAUCHE -->
+  <div class="panel-left">
+
+    <div class="section">
+      <div class="section-title">Image produit</div>
+      <div class="view-tabs" id="viewTabs"></div>
+      <div class="upload-img">
+        <input type="file" accept="image/*" onchange="uploadViewImg(this)">
+        <div class="upload-img-label">Uploader une image de vue (PNG/JPG)</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-title">Zones de marquage</div>
+      <div class="hint">Clique + glisse sur l'image pour dessiner une zone rectangulaire.</div>
+      <div class="zone-list" id="zoneList"></div>
+    </div>
+
+    <div class="section" id="zoneEditPanel" style="display:none">
+      <div class="section-title">Modifier la zone sélectionnée</div>
+      <div class="field"><label>Nom</label><input id="zName" placeholder="Ex: Recto poitrine" /></div>
+      <div class="field-row">
+        <div class="field"><label>Vue</label><input id="zView" placeholder="Recto" /></div>
+        <div class="field"><label>Max mm</label><input id="zMaxMm" type="number" placeholder="80" /></div>
+      </div>
+      <div class="field">
+        <label>Techniques disponibles</label>
+        <div class="tech-checks" id="techChecks"></div>
+      </div>
+      <button class="btn btn-outline" onclick="applyZoneEdit()">Appliquer</button>
+    </div>
+
+  </div>
+
+  <!-- CANVAS -->
+  <div class="canvas-area" id="canvasArea">
+    <canvas id="editorCv"></canvas>
+  </div>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+var SKU = '${sku}';
+var config = JSON.parse(\`${configJson}\`);
+if(!config.zones) config.zones = [];
+if(!config.viewImgs) config.viewImgs = {};
+if(!config.product) config.product = {sku:SKU, name:'${prod ? (prod.name||sku) : sku}'};
+
+var COLORS = ['#5b3de8','#e03e3e','#f97316','#1d9e5c','#0ea5e9','#a855f7','#ec4899'];
+var TECHS = ['seri_auto','seri_manuelle','transfert_seri','transfert_num','broderie','gravure_laser','tampon','sublimation'];
+var TECHNAMES = {seri_auto:'Seri auto',seri_manuelle:'Seri manuelle',transfert_seri:'Transfert seri',transfert_num:'Transfert num',broderie:'Broderie',gravure_laser:'Gravure laser',tampon:'Tampographie',sublimation:'Sublimation'};
+
+var cv = document.getElementById('editorCv');
+var ctx = cv.getContext('2d');
+var activeView = null;
+var imgCache = {};
+var activeZoneIdx = null;
+var drawing = false;
+var drawStart = null;
+var drawRect = null;
+var scale = 1;
+
+// ── INIT ────────────────────────────────────────────────────────────────────
+function init(){
+  var views = getViews();
+  if(!views.length) views = ['Recto'];
+  buildViewTabs(views);
+  switchView(views[0]);
+}
+
+function getViews(){
+  var v = Object.keys(config.viewImgs||{});
+  config.zones.forEach(function(z){ if(z.view && v.indexOf(z.view)<0) v.push(z.view); });
+  return v;
+}
+
+// ── VUES ────────────────────────────────────────────────────────────────────
+function buildViewTabs(views){
+  var el = document.getElementById('viewTabs');
+  el.innerHTML = '';
+  views.forEach(function(v){
+    var btn = document.createElement('button');
+    btn.className = 'view-tab' + (v===activeView?' active':'');
+    btn.textContent = v;
+    btn.onclick = function(){ switchView(v); };
+    el.appendChild(btn);
+  });
+  // Bouton + nouvelle vue
+  var add = document.createElement('button');
+  add.className = 'view-tab';
+  add.textContent = '+ Vue';
+  add.onclick = function(){
+    var name = prompt('Nom de la vue (ex: Verso, Manche G)');
+    if(!name) return;
+    if(!config.viewImgs[name]) config.viewImgs[name] = null;
+    buildViewTabs(getViews());
+    switchView(name);
+  };
+  el.appendChild(add);
+}
+
+function switchView(v){
+  activeView = v;
+  activeZoneIdx = null;
+  document.querySelectorAll('.view-tab').forEach(function(t){ t.classList.toggle('active', t.textContent===v); });
+  renderEditor();
+  buildZoneList();
+  buildZoneEditPanel();
+}
+
+// ── UPLOAD IMAGE ─────────────────────────────────────────────────────────────
+function uploadViewImg(input){
+  if(!input.files[0]) return;
+  var r = new FileReader();
+  r.onload = function(e){
+    config.viewImgs[activeView] = e.target.result;
+    var im = new Image();
+    im.onload = function(){ imgCache[activeView] = im; renderEditor(); };
+    im.src = e.target.result;
+  };
+  r.readAsDataURL(input.files[0]);
+  input.value = '';
+}
+
+// ── CANVAS RENDER ────────────────────────────────────────────────────────────
+function renderEditor(){
+  var area = document.getElementById('canvasArea');
+  var maxW = area.clientWidth - 40;
+  var maxH = area.clientHeight - 40;
+  var im = imgCache[activeView];
+
+  if(!im){
+    cv.width = Math.min(600, maxW);
+    cv.height = Math.min(600, maxH);
+    ctx.fillStyle = '#ede9e3';
+    ctx.fillRect(0,0,cv.width,cv.height);
+    ctx.fillStyle = '#bbb';
+    ctx.font = '14px Inter';
+    ctx.textAlign = 'center';
+    ctx.fillText('Uploadez une image de vue', cv.width/2, cv.height/2);
+    scale = 1;
+  } else {
+    scale = Math.min(maxW/im.naturalWidth, maxH/im.naturalHeight, 1);
+    cv.width = Math.round(im.naturalWidth * scale);
+    cv.height = Math.round(im.naturalHeight * scale);
+    ctx.drawImage(im, 0, 0, cv.width, cv.height);
+  }
+
+  // Dessiner les zones
+  config.zones.forEach(function(zone, idx){
+    if(zone.view !== activeView || !zone.pts || zone.pts.length < 4) return;
+    var pts = zone.pts.map(function(p){ return{x:p.x*scale, y:p.y*scale}; });
+    var zx=pts[0].x, zy=pts[0].y, zw=pts[1].x-pts[0].x, zh=pts[3].y-pts[0].y;
+    var color = COLORS[idx % COLORS.length];
+    var isActive = idx === activeZoneIdx;
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = isActive ? 2.5 : 1.5;
+    ctx.setLineDash(isActive ? [] : [5,4]);
+    ctx.strokeRect(zx, zy, zw, zh);
+    ctx.setLineDash([]);
+    ctx.fillStyle = color + (isActive ? '22' : '11');
+    ctx.fillRect(zx, zy, zw, zh);
+
+    // Label
+    ctx.fillStyle = color;
+    ctx.font = 'bold 11px Inter';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    ctx.fillText((idx+1)+'. '+(zone.name||'Zone'), zx+4, zy+4);
+
+    // Poignée resize
+    if(isActive){
+      ctx.fillStyle = color;
+      ctx.fillRect(zx+zw-8, zy+zh-8, 8, 8);
+    }
+    ctx.restore();
+  });
+
+  // Zone en cours de dessin
+  if(drawRect){
+    ctx.save();
+    ctx.strokeStyle = '#3b1f6e';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([5,4]);
+    ctx.strokeRect(drawRect.x, drawRect.y, drawRect.w, drawRect.h);
+    ctx.fillStyle = 'rgba(59,31,110,.08)';
+    ctx.fillRect(drawRect.x, drawRect.y, drawRect.w, drawRect.h);
+    ctx.setLineDash([]);
+    ctx.restore();
+  }
+}
+
+// ── DRAW EVENTS ──────────────────────────────────────────────────────────────
+function pt(e){
+  var r = cv.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+cv.addEventListener('mousedown', function(e){
+  var p = pt(e);
+  // Check si click sur zone existante
+  var hit = false;
+  for(var i=config.zones.length-1; i>=0; i--){
+    var zone = config.zones[i];
+    if(zone.view !== activeView || !zone.pts) continue;
+    var pts = zone.pts.map(function(pp){ return{x:pp.x*scale,y:pp.y*scale}; });
+    var zx=pts[0].x,zy=pts[0].y,zw=pts[1].x-pts[0].x,zh=pts[3].y-pts[0].y;
+    if(p.x>=zx&&p.x<=zx+zw&&p.y>=zy&&p.y<=zy+zh){
+      activeZoneIdx = i;
+      hit = true;
+      renderEditor();
+      buildZoneList();
+      buildZoneEditPanel();
+      break;
+    }
+  }
+  if(!hit){
+    // Commencer dessin
+    drawing = true;
+    drawStart = p;
+    drawRect = {x:p.x,y:p.y,w:0,h:0};
+    activeZoneIdx = null;
+    buildZoneEditPanel();
+  }
+});
+
+document.addEventListener('mousemove', function(e){
+  if(!drawing) return;
+  var p = pt(e);
+  drawRect = {
+    x: Math.min(drawStart.x, p.x),
+    y: Math.min(drawStart.y, p.y),
+    w: Math.abs(p.x - drawStart.x),
+    h: Math.abs(p.y - drawStart.y)
+  };
+  renderEditor();
+});
+
+document.addEventListener('mouseup', function(e){
+  if(!drawing) return;
+  drawing = false;
+  if(!drawRect || drawRect.w < 10 || drawRect.h < 10){ drawRect=null; renderEditor(); return; }
+
+  // Convertir en coords relatives (0-1)
+  var imgW = imgCache[activeView] ? imgCache[activeView].naturalWidth : cv.width;
+  var imgH = imgCache[activeView] ? imgCache[activeView].naturalHeight : cv.height;
+  var rx = drawRect.x / scale / imgW;
+  var ry = drawRect.y / scale / imgH;
+  var rw = drawRect.w / scale / imgW;
+  var rh = drawRect.h / scale / imgH;
+
+  var newZone = {
+    name: 'Zone ' + (config.zones.length + 1),
+    view: activeView,
+    maxMm: 80,
+    techniques: ['seri_auto','transfert_seri','transfert_num','broderie'],
+    pts: [
+      {x: rx*imgW, y: ry*imgH},
+      {x: (rx+rw)*imgW, y: ry*imgH},
+      {x: (rx+rw)*imgW, y: (ry+rh)*imgH},
+      {x: rx*imgW, y: (ry+rh)*imgH}
+    ]
+  };
+  config.zones.push(newZone);
+  activeZoneIdx = config.zones.length - 1;
+  drawRect = null;
+  renderEditor();
+  buildZoneList();
+  buildZoneEditPanel();
+});
+
+// ── ZONE LIST ────────────────────────────────────────────────────────────────
+function buildZoneList(){
+  var el = document.getElementById('zoneList');
+  el.innerHTML = '';
+  config.zones.forEach(function(zone, idx){
+    var div = document.createElement('div');
+    div.className = 'zone-row' + (idx===activeZoneIdx?' active':'');
+    div.innerHTML =
+      '<div class="zone-dot" style="background:'+COLORS[idx%COLORS.length]+'"></div>'
+      +'<div class="zone-info"><div class="zone-name-text">'+(zone.name||'Zone '+(idx+1))+'</div>'
+      +'<div class="zone-sub-text">'+(zone.view||'')+(zone.maxMm?' · '+zone.maxMm+'mm':'')+'</div></div>'
+      +'<button class="zone-del" onclick="deleteZone('+idx+',event)">×</button>';
+    div.onclick = function(){ activeZoneIdx=idx; renderEditor(); buildZoneList(); buildZoneEditPanel(); };
+    el.appendChild(div);
+  });
+}
+
+function deleteZone(idx, e){
+  e.stopPropagation();
+  if(!confirm('Supprimer cette zone ?')) return;
+  config.zones.splice(idx, 1);
+  if(activeZoneIdx >= config.zones.length) activeZoneIdx = config.zones.length - 1;
+  renderEditor(); buildZoneList(); buildZoneEditPanel();
+}
+
+// ── ZONE EDIT PANEL ──────────────────────────────────────────────────────────
+function buildZoneEditPanel(){
+  var panel = document.getElementById('zoneEditPanel');
+  if(activeZoneIdx === null || activeZoneIdx >= config.zones.length){ panel.style.display='none'; return; }
+  panel.style.display = 'block';
+  var zone = config.zones[activeZoneIdx];
+  document.getElementById('zName').value = zone.name||'';
+  document.getElementById('zView').value = zone.view||activeView;
+  document.getElementById('zMaxMm').value = zone.maxMm||80;
+
+  // Techniques
+  var tc = document.getElementById('techChecks');
+  tc.innerHTML = '';
+  TECHS.forEach(function(t){
+    var on = (zone.techniques||[]).indexOf(t) >= 0;
+    var span = document.createElement('span');
+    span.className = 'tech-check' + (on?' on':'');
+    span.textContent = TECHNAMES[t];
+    span.onclick = function(){
+      span.classList.toggle('on');
+    };
+    span.dataset.tech = t;
+    tc.appendChild(span);
+  });
+}
+
+function applyZoneEdit(){
+  if(activeZoneIdx === null) return;
+  var zone = config.zones[activeZoneIdx];
+  zone.name = document.getElementById('zName').value;
+  zone.view = document.getElementById('zView').value;
+  zone.maxMm = parseInt(document.getElementById('zMaxMm').value)||80;
+  zone.techniques = Array.from(document.querySelectorAll('.tech-check.on')).map(function(el){ return el.dataset.tech; });
+  renderEditor(); buildZoneList();
+  toast('Zone mise a jour');
+}
+
+// ── SAVE ─────────────────────────────────────────────────────────────────────
+async function saveAll(){
+  var r = await fetch('/products', {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({sku: SKU, name: config.product.name, config: config})
+  });
+  if(r.ok) toast('Enregistre !');
+  else toast('Erreur', false);
+}
+
+function toast(msg, ok=true){
+  var t = document.getElementById('toast');
+  t.textContent = msg; t.style.background = ok ? '#22c55e' : '#ef4444'; t.style.display = 'block';
+  setTimeout(function(){ t.style.display='none'; }, 2000);
+}
+
+// Charger les images depuis config
+function loadImages(){
+  var proms = Object.keys(config.viewImgs||{}).map(function(v){
+    var b64 = config.viewImgs[v];
+    if(!b64) return Promise.resolve();
+    return new Promise(function(res){
+      var im = new Image(); im.onload=function(){ imgCache[v]=im; res(); }; im.src=b64;
+    });
+  });
+  Promise.all(proms).then(init);
+}
+loadImages();
 </script>
 </body>
 </html>`;
