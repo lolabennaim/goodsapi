@@ -17,11 +17,15 @@ async function init() {
       sku TEXT PRIMARY KEY,
       name TEXT,
       config JSONB,
-      margin NUMERIC DEFAULT 2.5,
+      margin NUMERIC DEFAULT 2.7,
+      prix_achat NUMERIC DEFAULT 0,
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW()
     )
   `);
+  // Ajouter les colonnes si elles n'existent pas (migration)
+  await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS prix_achat NUMERIC DEFAULT 0`).catch(()=>{});
+  await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS margin NUMERIC DEFAULT 2.7`).catch(()=>{});
   console.log('DB prete');
 }
 init();
@@ -283,7 +287,8 @@ body{font-family:'Inter',sans-serif;background:#fff;color:#1a1a1a;font-size:14px
 
 <script>
 var API_URL='https://goodsapi-production.up.railway.app';
-var MARGIN=2.5;
+var MARGIN=2.7;
+var PRIX_ACHAT=0;
 var config=null;
 var sharedLogo=null;
 var logos={};
@@ -310,7 +315,7 @@ async function init(){
   try{
     var res=await fetch(API_URL+'/products/'+sku);
     if(!res.ok)throw 0;
-    var d=await res.json();config=d.config;MARGIN=d.margin||2.5;setup();
+    var d=await res.json();config=d.config;MARGIN=parseFloat(d.margin)||2.7;PRIX_ACHAT=parseFloat(d.prix_achat)||0;setup();
   }catch(e){
     var l=localStorage.getItem('goods_config');if(l){config=JSON.parse(l);setup();}else showErr('Produit introuvable');
   }
@@ -799,7 +804,7 @@ function setQty(n){
 
 // ── PRIX ─────────────────────────────────────────────────────────────────────
 function updatePrix(){
-  var pBase=config&&config.product&&config.product.pricing&&config.product.pricing.base||0;
+  var pBase=PRIX_ACHAT||0;
   var nZ=Math.max(1,Object.keys(selectedZones).length);
   var cliche=30*nZ;
   var marquage=getPrixMarquage();
@@ -841,19 +846,42 @@ app.get('/configurateur', (req, res) => {
 
 app.get('/', (req, res) => res.json({ status: 'GOODS API OK' }));
 
+// Route proxy pour tester l'API Makito
+app.get('/makito-test/:sku', async (req, res) => {
+  const auth = Buffer.from('celine@caesars-diffusion.fr:caeSars75').toString('base64');
+  const urls = [
+    `https://services.makito.es/api/v1/products/${req.params.sku}`,
+    `https://services.makito.es/api/products/${req.params.sku}`,
+    `https://data.makito.es/api/v1/products/${req.params.sku}`,
+    `https://services.makito.es/api/v1/items/${req.params.sku}`,
+  ];
+  const results = {};
+  for (const url of urls) {
+    try {
+      const r = await fetch(url, { headers: { 'Authorization': 'Basic ' + auth } });
+      const text = await r.text();
+      results[url] = { status: r.status, body: text.substring(0, 300) };
+    } catch(e) {
+      results[url] = { error: e.message };
+    }
+  }
+  res.json(results);
+});
+
 app.post('/products', async (req, res) => {
   try {
-    const { sku, name, config, margin } = req.body;
+    const { sku, name, config, margin, prix_achat } = req.body;
     if (!sku) return res.status(400).json({ error: 'SKU manquant' });
     await pool.query(`
-      INSERT INTO products (sku, name, config, margin, updated_at)
-      VALUES ($1, $2, $3, $4, NOW())
+      INSERT INTO products (sku, name, config, margin, prix_achat, updated_at)
+      VALUES ($1, $2, $3, $4, $5, NOW())
       ON CONFLICT (sku) DO UPDATE SET
         name = EXCLUDED.name,
         config = EXCLUDED.config,
         margin = EXCLUDED.margin,
+        prix_achat = EXCLUDED.prix_achat,
         updated_at = NOW()
-    `, [sku, name || '', config || {}, margin || 2.5]);
+    `, [sku, name || '', config || {}, margin || 2.7, prix_achat || 0]);
     res.json({ ok: true, sku });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -872,7 +900,7 @@ app.get('/products/:sku', async (req, res) => {
 
 app.get('/products', async (req, res) => {
   try {
-    const { rows } = await pool.query('SELECT sku, name, margin, updated_at FROM products ORDER BY updated_at DESC');
+    const { rows } = await pool.query('SELECT sku, name, margin, prix_achat, updated_at FROM products ORDER BY updated_at DESC');
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -886,6 +914,149 @@ app.delete('/products/:sku', async (req, res) => {
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+app.get('/admin', async (req, res) => {
+  const { rows } = await pool.query('SELECT sku, name, prix_achat, margin, updated_at FROM products ORDER BY updated_at DESC').catch(()=>({rows:[]}));
+  const html = `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GOODS Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Inter',sans-serif;background:#f5f0ff;color:#1a1a1a;min-height:100vh}
+.header{background:#3b1f6e;color:#fff;padding:20px 32px;display:flex;align-items:center;justify-content:space-between}
+.header h1{font-size:20px;font-weight:700}
+.header span{font-size:12px;opacity:.7}
+.container{max-width:900px;margin:32px auto;padding:0 20px}
+.card{background:#fff;border-radius:16px;padding:28px;margin-bottom:24px;box-shadow:0 2px 12px rgba(59,31,110,.08)}
+.card h2{font-size:15px;font-weight:700;margin-bottom:20px;color:#3b1f6e}
+.form-grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;align-items:end}
+.field label{display:block;font-size:11px;font-weight:600;color:#888;margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em}
+.field input{width:100%;padding:10px 12px;border:1.5px solid #ebebeb;border-radius:8px;font-size:14px;font-family:'Inter',sans-serif;outline:none;transition:border-color .12s}
+.field input:focus{border-color:#3b1f6e}
+.btn{padding:10px 20px;border-radius:8px;border:none;background:#3b1f6e;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .12s;white-space:nowrap}
+.btn:hover{background:#4e2a8e}
+.btn-sm{padding:6px 14px;font-size:12px;border-radius:6px}
+.btn-danger{background:#fee2e2;color:#dc2626}
+.btn-danger:hover{background:#fecaca}
+.table{width:100%;border-collapse:collapse}
+.table th{text-align:left;font-size:11px;color:#999;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:8px 12px;border-bottom:1px solid #f0f0f0}
+.table td{padding:12px;border-bottom:1px solid #f5f5f5;font-size:13px;vertical-align:middle}
+.table tr:last-child td{border-bottom:none}
+.sku-badge{background:#f0e9ff;color:#3b1f6e;padding:3px 8px;border-radius:5px;font-weight:700;font-size:12px}
+.prix-cell{font-weight:700;color:#3b1f6e}
+.calc{font-size:11px;color:#aaa;margin-top:2px}
+.toast{position:fixed;bottom:24px;right:24px;background:#22c55e;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;display:none;z-index:999}
+.actions{display:flex;gap:8px}
+.margin-note{font-size:11px;color:#aaa;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>GOODS Admin</h1>
+  <span>Gestion des produits et prix</span>
+</div>
+<div class="container">
+  <div class="card">
+    <h2>Ajouter / Modifier un produit</h2>
+    <div class="form-grid">
+      <div class="field"><label>SKU Makito</label><input id="fSku" placeholder="22022" /></div>
+      <div class="field"><label>Nom produit</label><input id="fName" placeholder="T-shirt Makito" /></div>
+      <div class="field"><label>Prix achat Makito (€)</label><input id="fPrix" type="number" step="0.01" placeholder="3.50" /></div>
+      <div class="field"><label>Marge (x)</label><input id="fMargin" type="number" step="0.1" value="2.7" /></div>
+    </div>
+    <div class="margin-note" id="calcPreview"></div>
+    <br>
+    <button class="btn" onclick="saveProduct()">Enregistrer</button>
+  </div>
+
+  <div class="card">
+    <h2>Produits configurés</h2>
+    <table class="table">
+      <thead><tr><th>SKU</th><th>Nom</th><th>Prix achat</th><th>Marge</th><th>Prix de vente min</th><th>Actions</th></tr></thead>
+      <tbody id="tbody">
+        ${rows.map(r => {
+          const pa = parseFloat(r.prix_achat)||0;
+          const m = parseFloat(r.margin)||2.7;
+          const pvMin = pa > 0 ? ((pa + 0.65 + 0.35 + 30/100) * m).toFixed(2) : '—';
+          return `<tr>
+            <td><span class="sku-badge">${r.sku}</span></td>
+            <td>${r.name||'—'}</td>
+            <td class="prix-cell">${pa > 0 ? pa.toFixed(2)+' €' : '—'}</td>
+            <td>×${m}</td>
+            <td class="prix-cell">${pvMin !== '—' ? pvMin+' €/u' : '—'}<div class="calc">100 unités, seri auto</div></td>
+            <td class="actions">
+              <a href="/configurateur?sku=${r.sku}" target="_blank"><button class="btn btn-sm">Voir</button></a>
+              <button class="btn btn-sm" onclick="editProduct('${r.sku}','${r.name||''}',${pa},${m})">Modifier</button>
+              <button class="btn btn-sm btn-danger" onclick="deleteProduct('${r.sku}')">Supprimer</button>
+            </td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+const API = '';
+function toast(msg, ok=true){
+  var t=document.getElementById('toast');
+  t.textContent=msg;t.style.background=ok?'#22c55e':'#ef4444';t.style.display='block';
+  setTimeout(()=>t.style.display='none', 2500);
+}
+
+// Preview calcul en temps réel
+['fPrix','fMargin'].forEach(id => {
+  document.getElementById(id).addEventListener('input', updatePreview);
+});
+function updatePreview(){
+  var pa=parseFloat(document.getElementById('fPrix').value)||0;
+  var m=parseFloat(document.getElementById('fMargin').value)||2.7;
+  var el=document.getElementById('calcPreview');
+  if(pa>0){
+    var pv100=((pa+0.65+0.35+30/100)*m).toFixed(2);
+    var pv500=((pa+0.415+0.35+30/500)*m).toFixed(2);
+    el.textContent='Prix de vente estimé : '+pv100+' €/u (×100) · '+pv500+' €/u (×500) — marquage sérigraphie inclus';
+  } else {
+    el.textContent='';
+  }
+}
+
+async function saveProduct(){
+  var sku=document.getElementById('fSku').value.trim();
+  var name=document.getElementById('fName').value.trim();
+  var prix=parseFloat(document.getElementById('fPrix').value)||0;
+  var margin=parseFloat(document.getElementById('fMargin').value)||2.7;
+  if(!sku){toast('SKU manquant', false);return;}
+  var r=await fetch('/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sku,name,prix_achat:prix,margin,config:{}})});
+  if(r.ok){toast('Produit enregistre');setTimeout(()=>location.reload(),1000);}
+  else toast('Erreur', false);
+}
+
+function editProduct(sku,name,prix,margin){
+  document.getElementById('fSku').value=sku;
+  document.getElementById('fName').value=name;
+  document.getElementById('fPrix').value=prix;
+  document.getElementById('fMargin').value=margin;
+  updatePreview();
+  window.scrollTo({top:0,behavior:'smooth'});
+}
+
+async function deleteProduct(sku){
+  if(!confirm('Supprimer '+sku+' ?'))return;
+  var r=await fetch('/products/'+sku,{method:'DELETE'});
+  if(r.ok){toast('Supprime');setTimeout(()=>location.reload(),1000);}
+  else toast('Erreur', false);
+}
+</script>
+</body>
+</html>`;
+  res.setHeader('Content-Type','text/html; charset=utf-8');
+  res.send(html);
 });
 
 const PORT = process.env.PORT || 3000;
