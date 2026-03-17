@@ -420,12 +420,10 @@ function renderCanvas(){
 
   config.zones.forEach(function(zone,idx){
     if(zone.view!==activeView||!zone.pts||zone.pts.length<4)return;
-    // Bounding box — toujours rectangle pour le client
     var xs=zone.pts.map(function(p){return p.x*scale;});
     var ys=zone.pts.map(function(p){return p.y*scale;});
     var zx=Math.min.apply(null,xs), zy=Math.min.apply(null,ys);
     var zw=Math.max.apply(null,xs)-zx, zh=Math.max.apply(null,ys)-zy;
-
     var isSel=!!selectedZones[idx];
     var hasLogo=logos[idx]&&logos[idx].imgEl;
 
@@ -443,11 +441,30 @@ function renderCanvas(){
         if(lg.imgEl.complete&&lg.imgEl.naturalWidth>0){
           initLogoPos(idx,zx,zy,zw,zh);
         } else {
-          (function(i,x,y,w,h){lg.imgEl.onload=function(){initLogoPos(i,x,y,w,h);renderCanvas();};})(idx,zx,zy,zw,zh);
+          lg.imgEl.onload=function(){initLogoPos(idx,zx,zy,zw,zh);renderCanvas();};
+          return;
         }
       }
       if(lg.rw===undefined)return;
       var lx=zx+lg.rx*zw, ly=zy+lg.ry*zh, lw=lg.rw*zw, lh=lg.rh*zh;
+      lg.x=lx;lg.y=ly;lg.w=lw;lg.h=lh;
+      lg._zx=zx;lg._zy=zy;lg._zw=zw;lg._zh=zh;
+      ctx.save();
+      ctx.beginPath();ctx.rect(zx,zy,zw,zh);ctx.clip();
+      ctx.drawImage(lg.imgEl,lx,ly,lw,lh);
+      if(idx===activeZoneIdx){
+        ctx.strokeStyle='#5b3de8';ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
+        ctx.strokeRect(lx,ly,lw,lh);ctx.setLineDash([]);
+        ctx.fillStyle='rgba(91,61,232,.08)';ctx.fillRect(lx,ly,lw,lh);
+        ctx.fillStyle='rgba(91,61,232,.85)';ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText('✥',lx+lw/2,ly+lh/2);
+        ctx.fillStyle='#5b3de8';ctx.beginPath();ctx.roundRect(lx+lw-HANDLE/2,ly+lh-HANDLE/2,HANDLE,HANDLE,3);ctx.fill();
+        ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⤡',lx+lw,ly+lh);
+      }
+      ctx.restore();
+    }
+  });
+}
       lg.x=lx;lg.y=ly;lg.w=lw;lg.h=lh;
       lg._zx=zx;lg._zy=zy;lg._zw=zw;lg._zh=zh;
       ctx.save();
