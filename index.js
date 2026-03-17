@@ -770,7 +770,10 @@ function onLogoReady(file,b64,imgEl){
   openStep(2);
   buildZoneList();
   renderCanvas();updateCTA();updatePrix();
-}
+  // Re-render après que les logos soient initialisés
+  setTimeout(function(){ renderCanvas(); }, 100);
+  // Détourage automatique
+  setTimeout(function(){ removeBg(); }, 400);
 
 function applyLogoToZone(idx){
   if(!sharedLogo)return;
