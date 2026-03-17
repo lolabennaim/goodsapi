@@ -19,14 +19,33 @@ async function init() {
       config JSONB,
       margin NUMERIC DEFAULT 2.7,
       prix_achat NUMERIC DEFAULT 0,
+      taux_marquage NUMERIC DEFAULT 0,
+      forfait_min NUMERIC DEFAULT 40,
+      cliche NUMERIC DEFAULT 30,
       created_at TIMESTAMP DEFAULT NOW(),
       updated_at TIMESTAMP DEFAULT NOW()
     )
   `);
-  // Ajouter les colonnes si elles n'existent pas (migration)
   await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS prix_achat NUMERIC DEFAULT 0`).catch(()=>{});
   await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS margin NUMERIC DEFAULT 2.7`).catch(()=>{});
+  await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS taux_marquage NUMERIC DEFAULT 0`).catch(()=>{});
+  await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS forfait_min NUMERIC DEFAULT 40`).catch(()=>{});
+  await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS cliche NUMERIC DEFAULT 30`).catch(()=>{});
   console.log('DB prete');
+}
+
+// Récupérer le prix d'une variante depuis Shopify
+async function getShopifyVariantPrice(variantId) {
+  try {
+    const domain = process.env.SHOPIFY_DOMAIN;
+    const token = process.env.SHOPIFY_TOKEN;
+    if (!domain || !token) return null;
+    const url = `https://${domain}/admin/api/2024-01/variants/${variantId}.json`;
+    const r = await fetch(url, { headers: { 'X-Shopify-Access-Token': token } });
+    if (!r.ok) return null;
+    const d = await r.json();
+    return parseFloat(d.variant?.price) || null;
+  } catch(e) { return null; }
 }
 init();
 
@@ -289,6 +308,9 @@ body{font-family:'Inter',sans-serif;background:#fff;color:#1a1a1a;font-size:14px
 var API_URL='https://goodsapi-production.up.railway.app';
 var MARGIN=2.7;
 var PRIX_ACHAT=0;
+var TAUX_MARQUAGE=0;
+var FORFAIT_MIN=40;
+var CLICHE=30;
 var config=null;
 var sharedLogo=null;
 var logos={};
@@ -315,7 +337,11 @@ async function init(){
   try{
     var res=await fetch(API_URL+'/products/'+sku);
     if(!res.ok)throw 0;
-    var d=await res.json();config=d.config;MARGIN=parseFloat(d.margin)||2.7;PRIX_ACHAT=parseFloat(d.prix_achat)||0;setup();
+    var d=await res.json();config=d.config;MARGIN=parseFloat(d.margin)||2.7;PRIX_ACHAT=parseFloat(d.prix_achat)||0;
+    TAUX_MARQUAGE=parseFloat(d.taux_marquage)||0;
+    FORFAIT_MIN=parseFloat(d.forfait_min)||40;
+    CLICHE=parseFloat(d.cliche)||30;
+    setup();
   }catch(e){
     var l=localStorage.getItem('goods_config');if(l){config=JSON.parse(l);setup();}else showErr('Produit introuvable');
   }
@@ -806,13 +832,14 @@ function setQty(n){
 function updatePrix(){
   var pBase=PRIX_ACHAT||0;
   var nZ=Math.max(1,Object.keys(selectedZones).length);
-  var cliche=30*nZ;
-  var marquage=getPrixMarquage();
-  var techAdd=activeTech&&PRIX_TECH[activeTech]||0;
-  var total=pBase>0?(pBase+marquage+techAdd+cliche/qty)*MARGIN:null;
+  var marquageParZone=Math.max(FORFAIT_MIN, TAUX_MARQUAGE*qty);
+  var totalMakito=pBase*qty + (marquageParZone+CLICHE)*nZ;
+  var prixUnitaireMakito=totalMakito/qty;
+  var total=pBase>0&&TAUX_MARQUAGE>0 ? prixUnitaireMakito*MARGIN : null;
+
   document.getElementById('pProduit').textContent=pBase>0?fmt(pBase*qty)+' €':'—';
-  document.getElementById('pMarquage').textContent=fmt((marquage+techAdd)*qty)+' €';
-  document.getElementById('pCliche').textContent=fmt(cliche)+' €';
+  document.getElementById('pMarquage').textContent=TAUX_MARQUAGE>0?fmt(marquageParZone*nZ)+' €':'—';
+  document.getElementById('pCliche').textContent=fmt(CLICHE*nZ)+' €';
   document.getElementById('pTotal').textContent=total?fmt(total)+' €/u':'—';
 }
 
@@ -844,7 +871,51 @@ app.get('/configurateur', (req, res) => {
   res.send(CONFIGURATEUR_HTML);
 });
 
-app.get('/', (req, res) => res.json({ status: 'GOODS API OK' }));
+// Route pour récupérer le prix d'une variante Shopify
+app.get('/shopify-price/:variantId', async (req, res) => {
+  const price = await getShopifyVariantPrice(req.params.variantId);
+  if (price === null) return res.status(404).json({ error: 'Prix introuvable' });
+  res.json({ price });
+});
+
+// Route pour récupérer les variantes d'un produit Shopify par SKU
+app.get('/shopify-variants/:sku', async (req, res) => {
+  try {
+    const domain = process.env.SHOPIFY_DOMAIN;
+    const token = process.env.SHOPIFY_TOKEN;
+    if (!domain || !token) return res.status(500).json({ error: 'Shopify non configure' });
+    const url = `https://${domain}/admin/api/2024-01/products.json?handle=${req.params.sku}`;
+    const r = await fetch(url, { headers: { 'X-Shopify-Access-Token': token } });
+    const d = await r.json();
+    // Chercher par SKU dans les variantes
+    const url2 = `https://${domain}/admin/api/2024-01/variants.json?limit=250`;
+    // Chercher le produit par SKU Makito dans les métafields ou le titre
+    const url3 = `https://${domain}/admin/api/2024-01/products.json?limit=250`;
+    const r3 = await fetch(url3, { headers: { 'X-Shopify-Access-Token': token } });
+    const d3 = await r3.json();
+    const products = d3.products || [];
+    // Trouver le produit dont une variante a le SKU Makito
+    let found = null;
+    for (const p of products) {
+      for (const v of (p.variants||[])) {
+        if (v.sku && v.sku.includes(req.params.sku)) {
+          found = p; break;
+        }
+      }
+      if (found) break;
+    }
+    if (!found) return res.status(404).json({ error: 'Produit non trouve dans Shopify' });
+    const variants = (found.variants||[]).map(v => ({
+      id: v.id,
+      title: v.title,
+      price: parseFloat(v.price)||0,
+      sku: v.sku
+    }));
+    res.json({ product: found.title, variants });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // Route proxy pour tester l'API Makito
 app.get('/makito-test/:sku', async (req, res) => {
@@ -870,18 +941,21 @@ app.get('/makito-test/:sku', async (req, res) => {
 
 app.post('/products', async (req, res) => {
   try {
-    const { sku, name, config, margin, prix_achat } = req.body;
+    const { sku, name, config, margin, prix_achat, taux_marquage, forfait_min, cliche } = req.body;
     if (!sku) return res.status(400).json({ error: 'SKU manquant' });
     await pool.query(`
-      INSERT INTO products (sku, name, config, margin, prix_achat, updated_at)
-      VALUES ($1, $2, $3, $4, $5, NOW())
+      INSERT INTO products (sku, name, config, margin, prix_achat, taux_marquage, forfait_min, cliche, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
       ON CONFLICT (sku) DO UPDATE SET
         name = EXCLUDED.name,
         config = EXCLUDED.config,
         margin = EXCLUDED.margin,
         prix_achat = EXCLUDED.prix_achat,
+        taux_marquage = EXCLUDED.taux_marquage,
+        forfait_min = EXCLUDED.forfait_min,
+        cliche = EXCLUDED.cliche,
         updated_at = NOW()
-    `, [sku, name || '', config || {}, margin || 2.7, prix_achat || 0]);
+    `, [sku, name || '', config || {}, margin || 2.7, prix_achat || 0, taux_marquage || 0, forfait_min || 40, cliche || 30]);
     res.json({ ok: true, sku });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -964,10 +1038,22 @@ body{font-family:'Inter',sans-serif;background:#f5f0ff;color:#1a1a1a;min-height:
   <div class="card">
     <h2>Ajouter / Modifier un produit</h2>
     <div class="form-grid">
-      <div class="field"><label>SKU Makito</label><input id="fSku" placeholder="22022" /></div>
+      <div class="field"><label>SKU Makito</label><input id="fSku" placeholder="22022" onblur="fetchShopifyVariants()" /></div>
       <div class="field"><label>Nom produit</label><input id="fName" placeholder="T-shirt Makito" /></div>
-      <div class="field"><label>Prix achat Makito (€)</label><input id="fPrix" type="number" step="0.01" placeholder="3.50" /></div>
-      <div class="field"><label>Marge (x)</label><input id="fMargin" type="number" step="0.1" value="2.7" /></div>
+      <div class="field"><label>Marge (x)</label><input id="fMargin" type="number" step="0.1" value="2.7" oninput="updatePreview()" /></div>
+    </div>
+    <div id="variantBlock" style="display:none;margin:12px 0">
+      <label style="font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px">Variante Shopify (prix d'achat auto)</label>
+      <select id="fVariant" onchange="onVariantChange()" style="width:100%;padding:10px 12px;border:1.5px solid #ebebeb;border-radius:8px;font-size:14px;font-family:'Inter',sans-serif;outline:none;margin-bottom:8px">
+        <option value="">Selectionnez une variante...</option>
+      </select>
+    </div>
+    <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px">Tarification Makito</div>
+    <div class="form-grid">
+      <div class="field"><label>Prix achat (€/u)</label><input id="fPrix" type="number" step="0.001" placeholder="1.20" oninput="updatePreview()" /></div>
+      <div class="field"><label>Taux marquage (€/u)</label><input id="fTaux" type="number" step="0.001" placeholder="0.56" oninput="updatePreview()" /></div>
+      <div class="field"><label>Forfait min marquage (€)</label><input id="fForfait" type="number" step="1" placeholder="45" oninput="updatePreview()" /></div>
+      <div class="field"><label>Cliché par zone (€)</label><input id="fCliche" type="number" step="1" placeholder="30" value="30" oninput="updatePreview()" /></div>
     </div>
     <div class="margin-note" id="calcPreview"></div>
     <br>
@@ -977,22 +1063,29 @@ body{font-family:'Inter',sans-serif;background:#f5f0ff;color:#1a1a1a;min-height:
   <div class="card">
     <h2>Produits configurés</h2>
     <table class="table">
-      <thead><tr><th>SKU</th><th>Nom</th><th>Prix achat</th><th>Marge</th><th>Prix de vente min</th><th>Actions</th></tr></thead>
+      <thead><tr><th>SKU</th><th>Nom</th><th>Prix achat</th><th>Marquage</th><th>Marge</th><th>Prix client (×100, 1 zone)</th><th>Actions</th></tr></thead>
       <tbody id="tbody">
         ${rows.map(r => {
           const pa = parseFloat(r.prix_achat)||0;
+          const tm = parseFloat(r.taux_marquage)||0;
+          const fm = parseFloat(r.forfait_min)||40;
+          const cl = parseFloat(r.cliche)||30;
           const m = parseFloat(r.margin)||2.7;
-          const pvMin = pa > 0 ? ((pa + 0.65 + 0.35 + 30/100) * m).toFixed(2) : '—';
+          const qte = 100;
+          const marquage = Math.max(fm, tm * qte);
+          const total = pa * qte + marquage + cl;
+          const pvMin = pa > 0 && tm > 0 ? ((total / qte) * m).toFixed(2) : '—';
           return `<tr>
             <td><span class="sku-badge">${r.sku}</span></td>
             <td>${r.name||'—'}</td>
-            <td class="prix-cell">${pa > 0 ? pa.toFixed(2)+' €' : '—'}</td>
+            <td class="prix-cell">${pa > 0 ? pa.toFixed(3)+' €' : '—'}</td>
+            <td>${tm > 0 ? tm.toFixed(3)+' €/u (min '+fm+'€)' : '—'}</td>
             <td>×${m}</td>
-            <td class="prix-cell">${pvMin !== '—' ? pvMin+' €/u' : '—'}<div class="calc">100 unités, seri auto</div></td>
+            <td class="prix-cell">${pvMin !== '—' ? pvMin+' €/u' : '—'}</td>
             <td class="actions">
               <a href="/configurateur?sku=${r.sku}" target="_blank"><button class="btn btn-sm">Voir</button></a>
               <a href="/admin/zones/${r.sku}"><button class="btn btn-sm" style="background:#f0e9ff;color:#3b1f6e">Zones</button></a>
-              <button class="btn btn-sm" onclick="editProduct('${r.sku}','${r.name||''}',${pa},${m})">Modifier</button>
+              <button class="btn btn-sm" onclick="editProduct('${r.sku}','${r.name||''}',${pa},${m},${tm},${fm},${cl})">Modifier</button>
               <button class="btn btn-sm btn-danger" onclick="deleteProduct('${r.sku}')">Supprimer</button>
             </td>
           </tr>`;
@@ -1003,25 +1096,50 @@ body{font-family:'Inter',sans-serif;background:#f5f0ff;color:#1a1a1a;min-height:
 </div>
 <div class="toast" id="toast"></div>
 <script>
-const API = '';
 function toast(msg, ok=true){
   var t=document.getElementById('toast');
   t.textContent=msg;t.style.background=ok?'#22c55e':'#ef4444';t.style.display='block';
   setTimeout(()=>t.style.display='none', 2500);
 }
 
-// Preview calcul en temps réel
-['fPrix','fMargin'].forEach(id => {
-  document.getElementById(id).addEventListener('input', updatePreview);
-});
+async function fetchShopifyVariants(){
+  var sku=document.getElementById('fSku').value.trim();
+  if(!sku)return;
+  var r=await fetch('/shopify-variants/'+sku).catch(()=>null);
+  if(!r||!r.ok)return;
+  var d=await r.json();
+  if(!d.variants||!d.variants.length)return;
+  var sel=document.getElementById('fVariant');
+  sel.innerHTML='<option value="">Selectionnez une variante...</option>';
+  d.variants.forEach(function(v){
+    var opt=document.createElement('option');
+    opt.value=v.price;
+    opt.textContent=v.title+' — '+v.price+' €';
+    sel.appendChild(opt);
+  });
+  document.getElementById('variantBlock').style.display='block';
+  if(!document.getElementById('fName').value && d.product) document.getElementById('fName').value=d.product;
+}
+
+function onVariantChange(){
+  var price=parseFloat(document.getElementById('fVariant').value)||0;
+  if(price>0){
+    document.getElementById('fPrix').value=price;
+    updatePreview();
+  }
+}
+
 function updatePreview(){
   var pa=parseFloat(document.getElementById('fPrix').value)||0;
+  var tm=parseFloat(document.getElementById('fTaux').value)||0;
+  var fm=parseFloat(document.getElementById('fForfait').value)||40;
+  var cl=parseFloat(document.getElementById('fCliche').value)||30;
   var m=parseFloat(document.getElementById('fMargin').value)||2.7;
   var el=document.getElementById('calcPreview');
-  if(pa>0){
-    var pv100=((pa+0.65+0.35+30/100)*m).toFixed(2);
-    var pv500=((pa+0.415+0.35+30/500)*m).toFixed(2);
-    el.textContent='Prix de vente estimé : '+pv100+' €/u (×100) · '+pv500+' €/u (×500) — marquage sérigraphie inclus';
+  if(pa>0&&tm>0){
+    function calc(q){ var mk=Math.max(fm,tm*q); return ((pa*q+mk+cl)/q*m).toFixed(2); }
+    el.textContent='Prix client : '+calc(50)+' €/u (×50) · '+calc(100)+' €/u (×100) · '+calc(250)+' €/u (×250) · '+calc(500)+' €/u (×500)';
+    el.style.color='#3b1f6e';
   } else {
     el.textContent='';
   }
@@ -1031,18 +1149,27 @@ async function saveProduct(){
   var sku=document.getElementById('fSku').value.trim();
   var name=document.getElementById('fName').value.trim();
   var prix=parseFloat(document.getElementById('fPrix').value)||0;
+  var taux=parseFloat(document.getElementById('fTaux').value)||0;
+  var forfait=parseFloat(document.getElementById('fForfait').value)||40;
+  var cliche=parseFloat(document.getElementById('fCliche').value)||30;
   var margin=parseFloat(document.getElementById('fMargin').value)||2.7;
   if(!sku){toast('SKU manquant', false);return;}
-  var r=await fetch('/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sku,name,prix_achat:prix,margin,config:{}})});
+  if(!prix){toast('Prix achat manquant', false);return;}
+  if(!taux){toast('Taux marquage manquant', false);return;}
+  var r=await fetch('/products',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({sku,name,prix_achat:prix,taux_marquage:taux,forfait_min:forfait,cliche,margin,config:{}})});
   if(r.ok){toast('Produit enregistre');setTimeout(()=>location.reload(),1000);}
   else toast('Erreur', false);
 }
 
-function editProduct(sku,name,prix,margin){
+function editProduct(sku,name,prix,margin,taux,forfait,cliche){
   document.getElementById('fSku').value=sku;
   document.getElementById('fName').value=name;
   document.getElementById('fPrix').value=prix;
   document.getElementById('fMargin').value=margin;
+  document.getElementById('fTaux').value=taux||'';
+  document.getElementById('fForfait').value=forfait||40;
+  document.getElementById('fCliche').value=cliche||30;
   updatePreview();
   window.scrollTo({top:0,behavior:'smooth'});
 }
