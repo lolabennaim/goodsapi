@@ -421,13 +421,22 @@ function renderCanvas(){
   config.zones.forEach(function(zone,idx){
     if(zone.view!==activeView||!zone.pts||zone.pts.length<4)return;
     var pts=zone.pts.map(function(p){return{x:p.x*scale,y:p.y*scale};});
-    var zx=pts[0].x,zy=pts[0].y,zw=pts[1].x-pts[0].x,zh=pts[3].y-pts[0].y;
+    var isPers=zone.mode==='perspective';
+
+    // Bounding box pour compatibilité
+    var xs=pts.map(function(p){return p.x;}),ys=pts.map(function(p){return p.y;});
+    var zx=Math.min.apply(null,xs),zy=Math.min.apply(null,ys);
+    var zw=Math.max.apply(null,xs)-zx,zh=Math.max.apply(null,ys)-zy;
+
     var isSel=!!selectedZones[idx];
     var hasLogo=logos[idx]&&logos[idx].imgEl;
 
     if(isSel&&!hasLogo){
       ctx.save();
-      ctx.beginPath();ctx.rect(zx,zy,zw,zh);
+      ctx.beginPath();
+      ctx.moveTo(pts[0].x,pts[0].y);
+      for(var k=1;k<pts.length;k++)ctx.lineTo(pts[k].x,pts[k].y);
+      ctx.closePath();
       ctx.fillStyle='rgba(91,61,232,.1)';ctx.fill();
       ctx.strokeStyle='rgba(91,61,232,.6)';ctx.lineWidth=2;ctx.setLineDash([5,4]);ctx.stroke();ctx.setLineDash([]);
       ctx.restore();
@@ -442,25 +451,132 @@ function renderCanvas(){
           lg.imgEl.onload=function(){initLogoPos(idx,zx,zy,zw,zh);renderCanvas();};
         }
       }
-      if(lg.rw===undefined)return; // pas encore prêt
-      var lx=zx+lg.rx*zw,ly=zy+lg.ry*zh,lw=lg.rw*zw,lh=lg.rh*zh;
-      lg.x=lx;lg.y=ly;lg.w=lw;lg.h=lh;
-      lg._zx=zx;lg._zy=zy;lg._zw=zw;lg._zh=zh;
-      ctx.save();
-      ctx.beginPath();ctx.rect(zx,zy,zw,zh);ctx.clip();
-      ctx.drawImage(lg.imgEl,lx,ly,lw,lh);
-      if(idx===activeZoneIdx){
-        ctx.strokeStyle='#5b3de8';ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
-        ctx.strokeRect(lx,ly,lw,lh);ctx.setLineDash([]);
-        ctx.fillStyle='rgba(91,61,232,.08)';ctx.fillRect(lx,ly,lw,lh);
-        ctx.fillStyle='rgba(91,61,232,.85)';ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillText('✥',lx+lw/2,ly+lh/2);
-        ctx.fillStyle='#5b3de8';ctx.beginPath();ctx.roundRect(lx+lw-HANDLE/2,ly+lh-HANDLE/2,HANDLE,HANDLE,3);ctx.fill();
-        ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⤡',lx+lw,ly+lh);
+      if(lg.rw===undefined)return;
+
+      if(isPers){
+        // Rendu avec transformation de perspective (homographie)
+        drawLogoWithPerspective(ctx,lg,pts,idx);
+      } else {
+        var lx=zx+lg.rx*zw,ly=zy+lg.ry*zh,lw=lg.rw*zw,lh=lg.rh*zh;
+        lg.x=lx;lg.y=ly;lg.w=lw;lg.h=lh;
+        lg._zx=zx;lg._zy=zy;lg._zw=zw;lg._zh=zh;
+        ctx.save();
+        ctx.beginPath();ctx.rect(zx,zy,zw,zh);ctx.clip();
+        ctx.drawImage(lg.imgEl,lx,ly,lw,lh);
+        if(idx===activeZoneIdx){
+          ctx.strokeStyle='#5b3de8';ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
+          ctx.strokeRect(lx,ly,lw,lh);ctx.setLineDash([]);
+          ctx.fillStyle='rgba(91,61,232,.08)';ctx.fillRect(lx,ly,lw,lh);
+          ctx.fillStyle='rgba(91,61,232,.85)';ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+          ctx.fillText('✥',lx+lw/2,ly+lh/2);
+          ctx.fillStyle='#5b3de8';ctx.beginPath();ctx.roundRect(lx+lw-HANDLE/2,ly+lh-HANDLE/2,HANDLE,HANDLE,3);ctx.fill();
+          ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⤡',lx+lw,ly+lh);
+        }
+        ctx.restore();
       }
-      ctx.restore();
     }
   });
+}
+
+// Dessin du logo avec transformation perspective (homographie)
+function drawLogoWithPerspective(ctx, lg, pts, idx){
+  // pts[0]=haut-gauche, pts[1]=haut-droite, pts[2]=bas-droite, pts[3]=bas-gauche
+  var p0=pts[0],p1=pts[1],p2=pts[2],p3=pts[3];
+
+  // Centre de la zone pour positionner le logo
+  var cx=(p0.x+p1.x+p2.x+p3.x)/4;
+  var cy=(p0.y+p1.y+p2.y+p3.y)/4;
+
+  // Largeur et hauteur moyennes de la zone
+  var wTop=Math.sqrt(Math.pow(p1.x-p0.x,2)+Math.pow(p1.y-p0.y,2));
+  var wBot=Math.sqrt(Math.pow(p2.x-p3.x,2)+Math.pow(p2.y-p3.y,2));
+  var hLeft=Math.sqrt(Math.pow(p3.x-p0.x,2)+Math.pow(p3.y-p0.y,2));
+  var hRight=Math.sqrt(Math.pow(p2.x-p1.x,2)+Math.pow(p2.y-p1.y,2));
+  var zw=(wTop+wBot)/2, zh=(hLeft+hRight)/2;
+
+  // Taille du logo dans la zone
+  var lw=lg.rw*zw, lh=lg.rh*zh;
+  var lx=cx-lw/2+(lg.rx-0.5)*zw;
+  var ly=cy-lh/2+(lg.ry-0.5)*zh;
+
+  // Angle moyen de la zone (rotation du haut)
+  var angle=Math.atan2(p1.y-p0.y, p1.x-p0.x);
+
+  // Facteur de perspective (compression verticale haut vs bas)
+  var scaleTop=wTop/Math.max(zw,1);
+  var scaleBot=wBot/Math.max(zw,1);
+
+  // Dessiner le logo en découpant par tranches horizontales
+  var imgW=lg.imgEl.naturalWidth, imgH=lg.imgEl.naturalHeight;
+  var slices=40; // nombre de tranches
+  for(var s=0;s<slices;s++){
+    var t0=s/slices, t1=(s+1)/slices;
+    var tm=(t0+t1)/2;
+
+    // Interpolation des points gauche et droite à cette hauteur
+    var leftX=p0.x+(p3.x-p0.x)*t0;
+    var leftY=p0.y+(p3.y-p0.y)*t0;
+    var rightX=p1.x+(p2.x-p1.x)*t0;
+    var rightY=p1.y+(p2.y-p1.y)*t0;
+    var leftX2=p0.x+(p3.x-p0.x)*t1;
+    var leftY2=p0.y+(p3.y-p0.y)*t1;
+    var rightX2=p1.x+(p2.x-p1.x)*t1;
+    var rightY2=p1.y+(p2.y-p1.y)*t1;
+
+    // Largeur de la tranche dans la zone
+    var rowW=Math.sqrt(Math.pow(rightX-leftX,2)+Math.pow(rightY-leftY,2));
+
+    // Position du logo dans cette tranche
+    var logoT0=(t0-0.5+lg.ry)*zh, logoT1=(t1-0.5+lg.ry)*zh;
+    var logoLeft=(lg.rx-0.5)*zw+cx-lw/2;
+
+    // Source dans l'image logo
+    var srcY=t0*imgH, srcH=(t1-t0)*imgH;
+    var srcX=0, srcW=imgW;
+
+    // Facteur d'échelle horizontal à cette hauteur
+    var scaleFactor=rowW/Math.max(zw,1);
+    var destW=lw*scaleFactor;
+    var destX=leftX+(rightX-leftX)*((lg.rx-0.5+0.5));
+    var destY=leftY+(leftY2-leftY)*0.5+t0*(p3.y-p0.y+p2.y-p1.y)/2*0;
+
+    // Angle de cette tranche
+    var rowAngle=Math.atan2(rightY-leftY, rightX-leftX);
+
+    ctx.save();
+    // Clip sur le polygone de la zone
+    ctx.beginPath();
+    ctx.moveTo(p0.x,p0.y);ctx.lineTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.lineTo(p3.x,p3.y);
+    ctx.closePath();ctx.clip();
+
+    // Transformer pour cette tranche
+    ctx.translate(leftX+(rightX-leftX)*(lg.rx), leftY+(rightY-leftY)*(lg.rx)+(leftY2-leftY)*t0/t1*0.5);
+    ctx.rotate(rowAngle);
+    ctx.scale(scaleFactor, 1);
+
+    ctx.drawImage(lg.imgEl,
+      srcX, srcY, srcW, srcH/slices*slices,
+      -lw*lg.rx, lh*(t0-lg.ry), lw, lh/slices
+    );
+    ctx.restore();
+  }
+
+  // Stocker pour interaction
+  lg.x=lx; lg.y=ly; lg.w=lw; lg.h=lh;
+  lg._zx=cx-zw/2; lg._zy=cy-zh/2; lg._zw=zw; lg._zh=zh;
+
+  // Poignées si actif
+  if(idx===activeZoneIdx){
+    ctx.save();
+    ctx.strokeStyle='#5b3de8';ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
+    ctx.strokeRect(lx,ly,lw,lh);ctx.setLineDash([]);
+    ctx.fillStyle='rgba(91,61,232,.08)';ctx.fillRect(lx,ly,lw,lh);
+    ctx.fillStyle='rgba(91,61,232,.85)';ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('✥',lx+lw/2,ly+lh/2);
+    ctx.fillStyle='#5b3de8';ctx.beginPath();ctx.roundRect(lx+lw-HANDLE/2,ly+lh-HANDLE/2,HANDLE,HANDLE,3);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⤡',lx+lw,ly+lh);
+    ctx.restore();
+  }
 }
 
 function initLogoPos(idx,zx,zy,zw,zh){
