@@ -465,24 +465,6 @@ function renderCanvas(){
     }
   });
 }
-      lg.x=lx;lg.y=ly;lg.w=lw;lg.h=lh;
-      lg._zx=zx;lg._zy=zy;lg._zw=zw;lg._zh=zh;
-      ctx.save();
-      ctx.beginPath();ctx.rect(zx,zy,zw,zh);ctx.clip();
-      ctx.drawImage(lg.imgEl,lx,ly,lw,lh);
-      if(idx===activeZoneIdx){
-        ctx.strokeStyle='#5b3de8';ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
-        ctx.strokeRect(lx,ly,lw,lh);ctx.setLineDash([]);
-        ctx.fillStyle='rgba(91,61,232,.08)';ctx.fillRect(lx,ly,lw,lh);
-        ctx.fillStyle='rgba(91,61,232,.85)';ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillText('✥',lx+lw/2,ly+lh/2);
-        ctx.fillStyle='#5b3de8';ctx.beginPath();ctx.roundRect(lx+lw-HANDLE/2,ly+lh-HANDLE/2,HANDLE,HANDLE,3);ctx.fill();
-        ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⤡',lx+lw,ly+lh);
-      }
-      ctx.restore();
-    }
-  });
-}
 
 // Dessin du logo avec transformation perspective (homographie)
 function drawLogoWithPerspective(ctx, lg, pts, idx){
