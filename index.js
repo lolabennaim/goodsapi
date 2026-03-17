@@ -742,9 +742,9 @@ function onLogoReady(file,b64,imgEl){
   // Auto-sélectionner la première zone si aucune zone sélectionnée
   if(Object.keys(selectedZones).length===0){
     var firstIdx=-1;
-    for(var i=0;i<config.zones.length;i++){
-      if(!activeView||config.zones[i].view===activeView){
-        firstIdx=i;break;
+    for(var zi=0;zi<config.zones.length;zi++){
+      if(!activeView||config.zones[zi].view===activeView){
+        firstIdx=zi;break;
       }
     }
     if(firstIdx>=0){
