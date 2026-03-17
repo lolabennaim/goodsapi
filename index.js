@@ -884,34 +884,29 @@ app.get('/shopify-variants/:sku', async (req, res) => {
     const domain = process.env.SHOPIFY_DOMAIN;
     const token = process.env.SHOPIFY_TOKEN;
     if (!domain || !token) return res.status(500).json({ error: 'Shopify non configure' });
-    const url = `https://${domain}/admin/api/2024-01/products.json?handle=${req.params.sku}`;
-    const r = await fetch(url, { headers: { 'X-Shopify-Access-Token': token } });
+    const sku = req.params.sku;
+    const headers = { 'X-Shopify-Access-Token': token };
+
+    // Chercher par handle contenant le SKU
+    const r = await fetch(`https://${domain}/admin/api/2024-01/products.json?handle=${sku}&limit=1`, { headers });
     const d = await r.json();
-    // Chercher par SKU dans les variantes
-    const url2 = `https://${domain}/admin/api/2024-01/variants.json?limit=250`;
-    // Chercher le produit par SKU Makito dans les métafields ou le titre
-    const url3 = `https://${domain}/admin/api/2024-01/products.json?limit=250`;
-    const r3 = await fetch(url3, { headers: { 'X-Shopify-Access-Token': token } });
-    const d3 = await r3.json();
-    const products = d3.products || [];
-    // Trouver le produit dont une variante a le SKU Makito
-    let found = null;
-    for (const p of products) {
-      for (const v of (p.variants||[])) {
-        if (v.sku && v.sku.includes(req.params.sku)) {
-          found = p; break;
-        }
-      }
-      if (found) break;
+    let product = (d.products||[])[0];
+
+    // Si pas trouvé par handle exact, chercher dans tous les produits
+    if (!product) {
+      const r2 = await fetch(`https://${domain}/admin/api/2024-01/products.json?limit=250`, { headers });
+      const d2 = await r2.json();
+      product = (d2.products||[]).find(p => p.handle && p.handle.includes(sku));
     }
-    if (!found) return res.status(404).json({ error: 'Produit non trouve dans Shopify' });
-    const variants = (found.variants||[]).map(v => ({
-      id: v.id,
-      title: v.title,
-      price: parseFloat(v.price)||0,
-      sku: v.sku
-    }));
-    res.json({ product: found.title, variants });
+
+    if (!product) return res.status(404).json({ error: 'Produit non trouve dans Shopify' });
+
+    // Trier variantes par prix décroissant, prendre la plus chère
+    const variants = (product.variants||[])
+      .sort((a, b) => parseFloat(b.price) - parseFloat(a.price))
+      .map(v => ({ id: v.id, title: v.title, price: parseFloat(v.price)||0, sku: v.sku }));
+
+    res.json({ product: product.title, variants, maxPrice: variants[0]?.price || 0 });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
@@ -1317,6 +1312,12 @@ async function fetchVariants(){
     document.getElementById('variantBlock').style.display = 'block';
     if(!document.getElementById('fName').value && d.product)
       document.getElementById('fName').value = d.product;
+    // Auto-sélectionner la plus chère
+    if(d.maxPrice > 0){
+      sel.value = d.maxPrice;
+      document.getElementById('fPrix').value = d.maxPrice;
+      updatePreview();
+    }
   } catch(e) {}
 }
 
