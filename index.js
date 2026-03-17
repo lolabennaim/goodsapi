@@ -442,13 +442,11 @@ function renderCanvas(){
       if(lg.rw===undefined){
         if(lg.imgEl.complete&&lg.imgEl.naturalWidth>0){
           initLogoPos(idx,zx,zy,zw,zh);
-          renderCanvas();
-          return;
         } else {
-          lg.imgEl.onload=function(){initLogoPos(idx,zx,zy,zw,zh);renderCanvas();};
-          return;
+          (function(i,x,y,w,h){lg.imgEl.onload=function(){initLogoPos(i,x,y,w,h);renderCanvas();};})(idx,zx,zy,zw,zh);
         }
       }
+      if(lg.rw===undefined)return;
       var lx=zx+lg.rx*zw, ly=zy+lg.ry*zh, lw=lg.rw*zw, lh=lg.rh*zh;
       lg.x=lx;lg.y=ly;lg.w=lw;lg.h=lh;
       lg._zx=zx;lg._zy=zy;lg._zw=zw;lg._zh=zh;
