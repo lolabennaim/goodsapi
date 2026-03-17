@@ -741,9 +741,13 @@ function onLogoReady(file,b64,imgEl){
 
   // Auto-sélectionner la première zone si aucune zone sélectionnée
   if(Object.keys(selectedZones).length===0){
-    var firstZone=config.zones.find(function(z){return z.view===activeView;});
-    if(firstZone){
-      var firstIdx=config.zones.indexOf(firstZone);
+    var firstIdx=-1;
+    for(var i=0;i<config.zones.length;i++){
+      if(!activeView||config.zones[i].view===activeView){
+        firstIdx=i;break;
+      }
+    }
+    if(firstIdx>=0){
       selectedZones[firstIdx]=true;
       activeZoneIdx=firstIdx;
     }
