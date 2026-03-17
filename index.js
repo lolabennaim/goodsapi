@@ -672,7 +672,9 @@ function bindCanvas(){
   }
 
   document.addEventListener('mousedown',function(e){
-    if(!cv.contains(e.target)&&activeZoneIdx!==null){
+    var uploadArea = document.getElementById('uploadDrop');
+    var isUploadClick = uploadArea && uploadArea.contains(e.target);
+    if(!cv.contains(e.target)&&!isUploadClick&&activeZoneIdx!==null){
       activeZoneIdx=null;renderCanvas();
     }
   });
@@ -752,11 +754,8 @@ function onLogoReady(file,b64,imgEl){
     if(firstIdx>=0){
       selectedZones[firstIdx]=true;
       activeZoneIdx=firstIdx;
+      applyLogoToZone(firstIdx);
     }
-  }
-
-  // Appliquer à toutes zones sélectionnées
-  Object.keys(selectedZones).forEach(function(idx){applyLogoToZone(parseInt(idx));});
 
   // UI
   var drop=document.getElementById('uploadDrop');
