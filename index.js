@@ -480,101 +480,99 @@ function renderCanvas(){
 
 // Dessin du logo avec transformation perspective (homographie)
 function drawLogoWithPerspective(ctx, lg, pts, idx){
-  // pts[0]=haut-gauche, pts[1]=haut-droite, pts[2]=bas-droite, pts[3]=bas-gauche
   var p0=pts[0],p1=pts[1],p2=pts[2],p3=pts[3];
 
-  // Centre de la zone pour positionner le logo
-  var cx=(p0.x+p1.x+p2.x+p3.x)/4;
-  var cy=(p0.y+p1.y+p2.y+p3.y)/4;
-
-  // Largeur et hauteur moyennes de la zone
+  // Largeurs et hauteurs moyennes de la zone
   var wTop=Math.sqrt(Math.pow(p1.x-p0.x,2)+Math.pow(p1.y-p0.y,2));
   var wBot=Math.sqrt(Math.pow(p2.x-p3.x,2)+Math.pow(p2.y-p3.y,2));
   var hLeft=Math.sqrt(Math.pow(p3.x-p0.x,2)+Math.pow(p3.y-p0.y,2));
   var hRight=Math.sqrt(Math.pow(p2.x-p1.x,2)+Math.pow(p2.y-p1.y,2));
   var zw=(wTop+wBot)/2, zh=(hLeft+hRight)/2;
 
-  // Taille du logo dans la zone
   var lw=lg.rw*zw, lh=lg.rh*zh;
-  var lx=cx-lw/2+(lg.rx-0.5)*zw;
-  var ly=cy-lh/2+(lg.ry-0.5)*zh;
+  var cx=(p0.x+p1.x+p2.x+p3.x)/4;
+  var cy=(p0.y+p1.y+p2.y+p3.y)/4;
+  var ox=(lg.rx-0.5)*zw, oy=(lg.ry-0.5)*zh;
 
-  // Angle moyen de la zone (rotation du haut)
-  var angle=Math.atan2(p1.y-p0.y, p1.x-p0.x);
+  // 4 coins du logo dans l'espace de la zone (coordonnées relatives 0-1)
+  var logoU0=(lg.rx-lg.rw/2), logoU1=(lg.rx+lg.rw/2);
+  var logoV0=(lg.ry-lg.rh/2), logoV1=(lg.ry+lg.rh/2);
+  logoU0=Math.max(0,Math.min(1,logoU0));
+  logoU1=Math.max(0,Math.min(1,logoU1));
+  logoV0=Math.max(0,Math.min(1,logoV0));
+  logoV1=Math.max(0,Math.min(1,logoV1));
 
-  // Facteur de perspective (compression verticale haut vs bas)
-  var scaleTop=wTop/Math.max(zw,1);
-  var scaleBot=wBot/Math.max(zw,1);
-
-  // Dessiner le logo en découpant par tranches horizontales
+  // Dessiner le logo en subdivision bilinéaire (grille de quads)
+  var steps=30;
   var imgW=lg.imgEl.naturalWidth, imgH=lg.imgEl.naturalHeight;
-  var slices=40; // nombre de tranches
-  for(var s=0;s<slices;s++){
-    var t0=s/slices, t1=(s+1)/slices;
-    var tm=(t0+t1)/2;
 
-    // Interpolation des points gauche et droite à cette hauteur
-    var leftX=p0.x+(p3.x-p0.x)*t0;
-    var leftY=p0.y+(p3.y-p0.y)*t0;
-    var rightX=p1.x+(p2.x-p1.x)*t0;
-    var rightY=p1.y+(p2.y-p1.y)*t0;
-    var leftX2=p0.x+(p3.x-p0.x)*t1;
-    var leftY2=p0.y+(p3.y-p0.y)*t1;
-    var rightX2=p1.x+(p2.x-p1.x)*t1;
-    var rightY2=p1.y+(p2.y-p1.y)*t1;
-
-    // Largeur de la tranche dans la zone
-    var rowW=Math.sqrt(Math.pow(rightX-leftX,2)+Math.pow(rightY-leftY,2));
-
-    // Position du logo dans cette tranche
-    var logoT0=(t0-0.5+lg.ry)*zh, logoT1=(t1-0.5+lg.ry)*zh;
-    var logoLeft=(lg.rx-0.5)*zw+cx-lw/2;
-
-    // Source dans l'image logo
-    var srcY=t0*imgH, srcH=(t1-t0)*imgH;
-    var srcX=0, srcW=imgW;
-
-    // Facteur d'échelle horizontal à cette hauteur
-    var scaleFactor=rowW/Math.max(zw,1);
-    var destW=lw*scaleFactor;
-    var destX=leftX+(rightX-leftX)*((lg.rx-0.5+0.5));
-    var destY=leftY+(leftY2-leftY)*0.5+t0*(p3.y-p0.y+p2.y-p1.y)/2*0;
-
-    // Angle de cette tranche
-    var rowAngle=Math.atan2(rightY-leftY, rightX-leftX);
-
-    ctx.save();
-    // Clip sur le polygone de la zone
-    ctx.beginPath();
-    ctx.moveTo(p0.x,p0.y);ctx.lineTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.lineTo(p3.x,p3.y);
-    ctx.closePath();ctx.clip();
-
-    // Transformer pour cette tranche
-    ctx.translate(leftX+(rightX-leftX)*(lg.rx), leftY+(rightY-leftY)*(lg.rx)+(leftY2-leftY)*t0/t1*0.5);
-    ctx.rotate(rowAngle);
-    ctx.scale(scaleFactor, 1);
-
-    ctx.drawImage(lg.imgEl,
-      srcX, srcY, srcW, srcH/slices*slices,
-      -lw*lg.rx, lh*(t0-lg.ry), lw, lh/slices
-    );
-    ctx.restore();
+  // Interpolation bilinéaire : u,v (0-1) -> coordonnée écran dans le quadrilatère
+  function bilerp(u,v){
+    var x=(1-u)*(1-v)*p0.x + u*(1-v)*p1.x + u*v*p2.x + (1-u)*v*p3.x;
+    var y=(1-u)*(1-v)*p0.y + u*(1-v)*p1.y + u*v*p2.y + (1-u)*v*p3.y;
+    return{x:x,y:y};
   }
 
-  // Stocker pour interaction
-  lg.x=lx; lg.y=ly; lg.w=lw; lg.h=lh;
-  lg._zx=cx-zw/2; lg._zy=cy-zh/2; lg._zw=zw; lg._zh=zh;
+  ctx.save();
+  // Clip zone
+  ctx.beginPath();
+  ctx.moveTo(p0.x,p0.y);ctx.lineTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.lineTo(p3.x,p3.y);
+  ctx.closePath();ctx.clip();
 
-  // Poignées si actif
+  // Dessiner par petits quads
+  for(var j=0;j<steps;j++){
+    for(var i=0;i<steps;i++){
+      var u0=logoU0+(logoU1-logoU0)*i/steps;
+      var u1=logoU0+(logoU1-logoU0)*(i+1)/steps;
+      var v0=logoV0+(logoV1-logoV0)*j/steps;
+      var v1=logoV0+(logoV1-logoV0)*(j+1)/steps;
+
+      var tl=bilerp(u0,v0), tr=bilerp(u1,v0);
+      var bl=bilerp(u0,v1), br=bilerp(u1,v1);
+
+      // Source dans l'image
+      var sx=((u0-logoU0)/(logoU1-logoU0||1))*imgW;
+      var sy=((v0-logoV0)/(logoV1-logoV0||1))*imgH;
+      var sw=imgW/steps, sh=imgH/steps;
+
+      // Destination : transformer le quad en triangle pairs
+      ctx.save();
+      ctx.beginPath();
+      ctx.moveTo(tl.x,tl.y);ctx.lineTo(tr.x,tr.y);ctx.lineTo(br.x,br.y);ctx.lineTo(bl.x,bl.y);
+      ctx.closePath();ctx.clip();
+
+      // Calcul de la transformation affine pour ce quad (triangle haut-gauche)
+      var destW=Math.max(Math.sqrt(Math.pow(tr.x-tl.x,2)+Math.pow(tr.y-tl.y,2)),
+                         Math.sqrt(Math.pow(br.x-bl.x,2)+Math.pow(br.y-bl.y,2)));
+      var destH=Math.max(Math.sqrt(Math.pow(bl.x-tl.x,2)+Math.pow(bl.y-tl.y,2)),
+                         Math.sqrt(Math.pow(br.x-tr.x,2)+Math.pow(br.y-tr.y,2)));
+
+      // Transformation: aligner tl->tr (direction) et tl->bl
+      var dx=tr.x-tl.x, dy=tr.y-tl.y;
+      var ex=bl.x-tl.x, ey=bl.y-tl.y;
+      var scaleX=destW/Math.max(sw,1);
+      var scaleY=destH/Math.max(sh,1);
+
+      ctx.transform(dx/Math.max(sw,1), dy/Math.max(sw,1), ex/Math.max(sh,1), ey/Math.max(sh,1), tl.x, tl.y);
+      ctx.drawImage(lg.imgEl, sx, sy, sw, sh, 0, 0, sw, sh);
+      ctx.restore();
+    }
+  }
+  ctx.restore();
+
+  // Stocker position pour interaction
+  var lx=bilerp(logoU0,logoV0).x, ly=bilerp(logoU0,logoV0).y;
+  lg.x=lx; lg.y=ly; lg.w=lw; lg.h=lh;
+  lg._zx=p0.x; lg._zy=p0.y; lg._zw=zw; lg._zh=zh;
+
   if(idx===activeZoneIdx){
+    var center=bilerp((logoU0+logoU1)/2,(logoV0+logoV1)/2);
+    var br2=bilerp(logoU1,logoV1);
     ctx.save();
-    ctx.strokeStyle='#5b3de8';ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
-    ctx.strokeRect(lx,ly,lw,lh);ctx.setLineDash([]);
-    ctx.fillStyle='rgba(91,61,232,.08)';ctx.fillRect(lx,ly,lw,lh);
     ctx.fillStyle='rgba(91,61,232,.85)';ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-    ctx.fillText('✥',lx+lw/2,ly+lh/2);
-    ctx.fillStyle='#5b3de8';ctx.beginPath();ctx.roundRect(lx+lw-HANDLE/2,ly+lh-HANDLE/2,HANDLE,HANDLE,3);ctx.fill();
-    ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⤡',lx+lw,ly+lh);
+    ctx.fillText('✥',center.x,center.y);
+    ctx.fillStyle='#5b3de8';ctx.beginPath();ctx.arc(br2.x,br2.y,8,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('⤡',br2.x,br2.y);
     ctx.restore();
   }
 }
