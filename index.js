@@ -738,8 +738,20 @@ function onLogoReady(file,b64,imgEl){
   }
   sharedLogo={file:file,b64:b64,imgEl:imgEl};
   document.getElementById('loadingOverlay').style.display='none';
-  // Appliquer à toutes zones déjà sélectionnées
+
+  // Auto-sélectionner la première zone si aucune zone sélectionnée
+  if(Object.keys(selectedZones).length===0){
+    var firstZone=config.zones.find(function(z){return z.view===activeView;});
+    if(firstZone){
+      var firstIdx=config.zones.indexOf(firstZone);
+      selectedZones[firstIdx]=true;
+      activeZoneIdx=firstIdx;
+    }
+  }
+
+  // Appliquer à toutes zones sélectionnées
   Object.keys(selectedZones).forEach(function(idx){applyLogoToZone(parseInt(idx));});
+
   // UI
   var drop=document.getElementById('uploadDrop');
   drop.classList.add('has-file');
@@ -752,6 +764,7 @@ function onLogoReady(file,b64,imgEl){
   document.getElementById('bgRemoveWrap').style.display='block';
   markStepDone(1,file.name);
   openStep(2);
+  buildZoneList();
   renderCanvas();updateCTA();updatePrix();
 }
 
