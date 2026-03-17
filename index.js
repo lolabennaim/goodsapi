@@ -990,200 +990,399 @@ app.delete('/products/:sku', async (req, res) => {
   }
 });
 
-app.get('/admin', async (req, res) => {
-  const { rows } = await pool.query('SELECT sku, name, prix_achat, margin, updated_at FROM products ORDER BY updated_at DESC').catch(()=>({rows:[]}));
+// ── ADMIN AUTH MIDDLEWARE ─────────────────────────────────────────────────────
+const ADMIN_PASSWORD = 'lola';
+
+function adminAuth(req, res, next) {
+  const cookie = req.headers.cookie || '';
+  const auth = cookie.split(';').find(c => c.trim().startsWith('goods_admin='));
+  if (auth && auth.split('=')[1] === ADMIN_PASSWORD) return next();
+  res.redirect('/admin/login');
+}
+
+app.get('/admin/login', (req, res) => {
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.send(`<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GOODS — Admin</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'DM Sans',sans-serif;background:#f8f7f5;min-height:100vh;display:flex;align-items:center;justify-content:center}
+.card{background:#fff;border-radius:20px;padding:48px 40px;width:100%;max-width:400px;box-shadow:0 4px 40px rgba(0,0,0,.08)}
+.logo{font-family:'DM Serif Display',serif;font-size:28px;color:#1a1a1a;margin-bottom:4px}
+.sub{font-size:13px;color:#aaa;margin-bottom:40px}
+label{display:block;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.07em;margin-bottom:6px}
+input{width:100%;padding:13px 16px;border:1.5px solid #e8e8e8;border-radius:10px;font-size:15px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .15s;margin-bottom:20px}
+input:focus{border-color:#1a1a1a}
+button{width:100%;padding:14px;border-radius:10px;border:none;background:#1a1a1a;color:#fff;font-size:15px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:background .15s}
+button:hover{background:#333}
+.err{color:#e03e3e;font-size:13px;margin-top:12px;text-align:center;display:none}
+</style>
+</head>
+<body>
+<div class="card">
+  <div class="logo">goods.</div>
+  <div class="sub">Espace administration</div>
+  <label>Mot de passe</label>
+  <input type="password" id="pw" placeholder="••••••••" onkeydown="if(event.key==='Enter')login()">
+  <button onclick="login()">Acceder</button>
+  <div class="err" id="err">Mot de passe incorrect</div>
+</div>
+<script>
+async function login(){
+  var pw=document.getElementById('pw').value;
+  var r=await fetch('/admin/auth',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:pw})});
+  if(r.ok){window.location.href='/admin';}
+  else{document.getElementById('err').style.display='block';}
+}
+</script>
+</body>
+</html>`);
+});
+
+app.post('/admin/auth', (req, res) => {
+  if (req.body.password === ADMIN_PASSWORD) {
+    res.setHeader('Set-Cookie', `goods_admin=${ADMIN_PASSWORD}; Path=/; HttpOnly; Max-Age=86400`);
+    res.json({ ok: true });
+  } else {
+    res.status(401).json({ error: 'Mot de passe incorrect' });
+  }
+});
+
+app.get('/admin/logout', (req, res) => {
+  res.setHeader('Set-Cookie', 'goods_admin=; Path=/; Max-Age=0');
+  res.redirect('/admin/login');
+});
+
+app.get('/admin', adminAuth, async (req, res) => {
+  const { rows } = await pool.query('SELECT sku, name, prix_achat, taux_marquage, forfait_min, cliche, margin, updated_at FROM products ORDER BY updated_at DESC').catch(()=>({rows:[]}));
+  const totalProducts = rows.length;
+  const productsConfigured = rows.filter(r => r.taux_marquage > 0).length;
+
   const html = `<!DOCTYPE html>
 <html lang="fr">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>GOODS Admin</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=DM+Serif+Display&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
-body{font-family:'Inter',sans-serif;background:#f5f0ff;color:#1a1a1a;min-height:100vh}
-.header{background:#3b1f6e;color:#fff;padding:20px 32px;display:flex;align-items:center;justify-content:space-between}
-.header h1{font-size:20px;font-weight:700}
-.header span{font-size:12px;opacity:.7}
-.container{max-width:900px;margin:32px auto;padding:0 20px}
-.card{background:#fff;border-radius:16px;padding:28px;margin-bottom:24px;box-shadow:0 2px 12px rgba(59,31,110,.08)}
-.card h2{font-size:15px;font-weight:700;margin-bottom:20px;color:#3b1f6e}
-.form-grid{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;align-items:end}
-.field label{display:block;font-size:11px;font-weight:600;color:#888;margin-bottom:5px;text-transform:uppercase;letter-spacing:.05em}
-.field input{width:100%;padding:10px 12px;border:1.5px solid #ebebeb;border-radius:8px;font-size:14px;font-family:'Inter',sans-serif;outline:none;transition:border-color .12s}
-.field input:focus{border-color:#3b1f6e}
-.btn{padding:10px 20px;border-radius:8px;border:none;background:#3b1f6e;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:'Inter',sans-serif;transition:background .12s;white-space:nowrap}
-.btn:hover{background:#4e2a8e}
-.btn-sm{padding:6px 14px;font-size:12px;border-radius:6px}
-.btn-danger{background:#fee2e2;color:#dc2626}
-.btn-danger:hover{background:#fecaca}
+body{font-family:'DM Sans',sans-serif;background:#f8f7f5;color:#1a1a1a;min-height:100vh}
+
+/* NAV */
+.nav{background:#fff;border-bottom:1px solid #ebebeb;padding:0 40px;height:60px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100}
+.nav-logo{font-family:'DM Serif Display',serif;font-size:22px;color:#1a1a1a}
+.nav-links{display:flex;gap:4px}
+.nav-link{padding:7px 14px;border-radius:8px;font-size:13px;font-weight:500;color:#888;cursor:pointer;text-decoration:none;transition:all .12s}
+.nav-link:hover{background:#f5f5f5;color:#1a1a1a}
+.nav-link.active{background:#1a1a1a;color:#fff}
+.nav-right{display:flex;align-items:center;gap:12px}
+.nav-badge{font-size:12px;color:#aaa}
+.nav-logout{font-size:12px;color:#aaa;text-decoration:none;padding:6px 12px;border-radius:7px;border:1px solid #eee}
+.nav-logout:hover{color:#1a1a1a;border-color:#ccc}
+
+/* LAYOUT */
+.page{max-width:1100px;margin:0 auto;padding:36px 24px}
+.page-title{font-family:'DM Serif Display',serif;font-size:28px;margin-bottom:4px}
+.page-sub{font-size:13px;color:#aaa;margin-bottom:32px}
+
+/* DASHBOARD CARDS */
+.dash-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:36px}
+.dash-card{background:#fff;border-radius:14px;padding:24px;border:1px solid #ebebeb}
+.dash-label{font-size:11px;font-weight:700;color:#aaa;text-transform:uppercase;letter-spacing:.07em;margin-bottom:8px}
+.dash-value{font-family:'DM Serif Display',serif;font-size:36px;color:#1a1a1a}
+.dash-sub{font-size:12px;color:#aaa;margin-top:4px}
+.dash-card.accent{background:#1a1a1a;border-color:#1a1a1a}
+.dash-card.accent .dash-label{color:rgba(255,255,255,.5)}
+.dash-card.accent .dash-value{color:#fff}
+.dash-card.accent .dash-sub{color:rgba(255,255,255,.4)}
+
+/* SECTION */
+.section{background:#fff;border-radius:14px;border:1px solid #ebebeb;margin-bottom:24px;overflow:hidden}
+.section-header{padding:20px 24px;border-bottom:1px solid #f5f5f5;display:flex;align-items:center;justify-content:space-between}
+.section-title{font-size:15px;font-weight:600}
+.section-body{padding:24px}
+
+/* FORM */
+.form-row{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.form-row-4{display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px;margin-bottom:12px}
+.fld label{display:block;font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.05em;margin-bottom:5px}
+.fld input,.fld select{width:100%;padding:10px 13px;border:1.5px solid #e8e8e8;border-radius:9px;font-size:13px;font-family:'DM Sans',sans-serif;outline:none;transition:border-color .12s;background:#fff}
+.fld input:focus,.fld select:focus{border-color:#1a1a1a}
+.tarif-block{background:#f8f7f5;border-radius:10px;padding:16px;margin-bottom:16px}
+.tarif-title{font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.07em;margin-bottom:12px}
+.preview-box{background:#f0fdf4;border:1px solid #bbf7d0;border-radius:9px;padding:12px 16px;font-size:12px;color:#166534;font-weight:500;margin-bottom:16px;display:none}
+.btn-primary{padding:11px 24px;border-radius:9px;border:none;background:#1a1a1a;color:#fff;font-size:13px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;transition:background .12s}
+.btn-primary:hover{background:#333}
+.variant-select{display:none;margin-bottom:12px}
+
+/* TABLE */
 .table{width:100%;border-collapse:collapse}
-.table th{text-align:left;font-size:11px;color:#999;font-weight:600;text-transform:uppercase;letter-spacing:.05em;padding:8px 12px;border-bottom:1px solid #f0f0f0}
-.table td{padding:12px;border-bottom:1px solid #f5f5f5;font-size:13px;vertical-align:middle}
+.table th{text-align:left;font-size:11px;color:#aaa;font-weight:700;text-transform:uppercase;letter-spacing:.05em;padding:10px 16px;border-bottom:1px solid #f0f0f0}
+.table td{padding:14px 16px;border-bottom:1px solid #f8f8f8;font-size:13px;vertical-align:middle}
 .table tr:last-child td{border-bottom:none}
-.sku-badge{background:#f0e9ff;color:#3b1f6e;padding:3px 8px;border-radius:5px;font-weight:700;font-size:12px}
-.prix-cell{font-weight:700;color:#3b1f6e}
-.calc{font-size:11px;color:#aaa;margin-top:2px}
-.toast{position:fixed;bottom:24px;right:24px;background:#22c55e;color:#fff;padding:12px 20px;border-radius:10px;font-size:13px;font-weight:600;display:none;z-index:999}
-.actions{display:flex;gap:8px}
-.margin-note{font-size:11px;color:#aaa;margin-top:6px}
+.table tr:hover td{background:#fafafa}
+.sku-pill{background:#f0f0f0;color:#555;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;font-family:'DM Mono',monospace}
+.price-val{font-weight:600;color:#1a1a1a}
+.status-ok{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:#16a34a;background:#f0fdf4;padding:3px 9px;border-radius:20px}
+.status-no{display:inline-flex;align-items:center;gap:4px;font-size:11px;font-weight:600;color:#aaa;background:#f5f5f5;padding:3px 9px;border-radius:20px}
+.actions{display:flex;gap:6px}
+.btn-sm{padding:5px 12px;border-radius:7px;font-size:11px;font-weight:600;cursor:pointer;font-family:'DM Sans',sans-serif;border:1px solid #e8e8e8;background:#fff;color:#555;transition:all .12s}
+.btn-sm:hover{border-color:#1a1a1a;color:#1a1a1a}
+.btn-sm.violet{border-color:#e8e3f5;background:#faf8ff;color:#6b4bc0}
+.btn-sm.violet:hover{background:#6b4bc0;color:#fff;border-color:#6b4bc0}
+.btn-sm.red{border-color:#fee;background:#fff5f5;color:#dc2626}
+.btn-sm.red:hover{background:#dc2626;color:#fff;border-color:#dc2626}
+.empty{text-align:center;padding:40px;color:#aaa;font-size:14px}
+
+.toast{position:fixed;bottom:20px;right:20px;background:#1a1a1a;color:#fff;padding:11px 20px;border-radius:10px;font-size:13px;font-weight:600;display:none;z-index:9999;box-shadow:0 4px 20px rgba(0,0,0,.15)}
 </style>
 </head>
 <body>
-<div class="header">
-  <h1>GOODS Admin</h1>
-  <span>Gestion des produits et prix</span>
-</div>
-<div class="container">
-  <div class="card">
-    <h2>Ajouter / Modifier un produit</h2>
-    <div class="form-grid">
-      <div class="field"><label>SKU Makito</label><input id="fSku" placeholder="22022" onblur="fetchShopifyVariants()" /></div>
-      <div class="field"><label>Nom produit</label><input id="fName" placeholder="T-shirt Makito" /></div>
-      <div class="field"><label>Marge (x)</label><input id="fMargin" type="number" step="0.1" value="2.7" oninput="updatePreview()" /></div>
+
+<nav class="nav">
+  <div class="nav-logo">goods.</div>
+  <div class="nav-links">
+    <span class="nav-link active">Produits</span>
+    <a class="nav-link" href="https://goodsapi-production.up.railway.app/configurateur?sku=22022" target="_blank">Apercu configurateur</a>
+  </div>
+  <div class="nav-right">
+    <span class="nav-badge">Admin</span>
+    <a class="nav-logout" href="/admin/logout">Deconnexion</a>
+  </div>
+</nav>
+
+<div class="page">
+  <div class="page-title">Tableau de bord</div>
+  <div class="page-sub">Gestion des produits et tarification</div>
+
+  <!-- DASHBOARD -->
+  <div class="dash-grid">
+    <div class="dash-card accent">
+      <div class="dash-label">Produits</div>
+      <div class="dash-value">${totalProducts}</div>
+      <div class="dash-sub">references configurees</div>
     </div>
-    <div id="variantBlock" style="display:none;margin:12px 0">
-      <label style="font-size:11px;font-weight:600;color:#888;text-transform:uppercase;letter-spacing:.05em;display:block;margin-bottom:5px">Variante Shopify (prix d'achat auto)</label>
-      <select id="fVariant" onchange="onVariantChange()" style="width:100%;padding:10px 12px;border:1.5px solid #ebebeb;border-radius:8px;font-size:14px;font-family:'Inter',sans-serif;outline:none;margin-bottom:8px">
-        <option value="">Selectionnez une variante...</option>
-      </select>
+    <div class="dash-card">
+      <div class="dash-label">Tarification complete</div>
+      <div class="dash-value">${productsConfigured}</div>
+      <div class="dash-sub">produits avec prix Makito</div>
     </div>
-    <div style="font-size:11px;font-weight:700;color:#888;text-transform:uppercase;letter-spacing:.05em;margin:12px 0 8px">Tarification Makito</div>
-    <div class="form-grid">
-      <div class="field"><label>Prix achat (€/u)</label><input id="fPrix" type="number" step="0.001" placeholder="1.20" oninput="updatePreview()" /></div>
-      <div class="field"><label>Taux marquage (€/u)</label><input id="fTaux" type="number" step="0.001" placeholder="0.56" oninput="updatePreview()" /></div>
-      <div class="field"><label>Forfait min marquage (€)</label><input id="fForfait" type="number" step="1" placeholder="45" oninput="updatePreview()" /></div>
-      <div class="field"><label>Cliché par zone (€)</label><input id="fCliche" type="number" step="1" placeholder="30" value="30" oninput="updatePreview()" /></div>
+    <div class="dash-card">
+      <div class="dash-label">Marge par defaut</div>
+      <div class="dash-value">×2,7</div>
+      <div class="dash-sub">appliquee sur tous les produits</div>
     </div>
-    <div class="margin-note" id="calcPreview"></div>
-    <br>
-    <button class="btn" onclick="saveProduct()">Enregistrer</button>
   </div>
 
-  <div class="card">
-    <h2>Produits configurés</h2>
+  <!-- FORMULAIRE -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-title">Ajouter / modifier un produit</div>
+    </div>
+    <div class="section-body">
+      <div class="form-row">
+        <div class="fld">
+          <label>SKU Makito</label>
+          <input id="fSku" placeholder="22022" onblur="fetchVariants()"/>
+        </div>
+        <div class="fld">
+          <label>Nom du produit</label>
+          <input id="fName" placeholder="T-shirt Adulte Epika"/>
+        </div>
+        <div class="fld">
+          <label>Marge (multiplicateur)</label>
+          <input id="fMargin" type="number" step="0.1" value="2.7" oninput="updatePreview()"/>
+        </div>
+      </div>
+
+      <div class="variant-select" id="variantBlock">
+        <div class="fld">
+          <label>Variante Shopify — prix d'achat auto</label>
+          <select id="fVariant" onchange="onVariantChange()">
+            <option value="">Selectionnez une variante...</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="tarif-block">
+        <div class="tarif-title">Tarification Makito</div>
+        <div class="form-row-4">
+          <div class="fld">
+            <label>Prix achat (€/u)</label>
+            <input id="fPrix" type="number" step="0.001" placeholder="1.200" oninput="updatePreview()"/>
+          </div>
+          <div class="fld">
+            <label>Taux marquage (€/u)</label>
+            <input id="fTaux" type="number" step="0.001" placeholder="0.560" oninput="updatePreview()"/>
+          </div>
+          <div class="fld">
+            <label>Forfait min marquage (€)</label>
+            <input id="fForfait" type="number" step="1" placeholder="45" oninput="updatePreview()"/>
+          </div>
+          <div class="fld">
+            <label>Cliche par zone (€)</label>
+            <input id="fCliche" type="number" step="1" placeholder="30" value="30" oninput="updatePreview()"/>
+          </div>
+        </div>
+      </div>
+
+      <div class="preview-box" id="previewBox"></div>
+      <button class="btn-primary" onclick="saveProduct()">Enregistrer le produit</button>
+    </div>
+  </div>
+
+  <!-- LISTE PRODUITS -->
+  <div class="section">
+    <div class="section-header">
+      <div class="section-title">Produits (${totalProducts})</div>
+    </div>
+    ${totalProducts === 0 ? '<div class="empty">Aucun produit — ajoutez votre premier produit ci-dessus</div>' : `
     <table class="table">
-      <thead><tr><th>SKU</th><th>Nom</th><th>Prix achat</th><th>Marquage</th><th>Marge</th><th>Prix client (×100, 1 zone)</th><th>Actions</th></tr></thead>
-      <tbody id="tbody">
+      <thead>
+        <tr>
+          <th>SKU</th>
+          <th>Produit</th>
+          <th>Prix achat</th>
+          <th>Tarification</th>
+          <th>Marge</th>
+          <th>Prix client ×100 / 1 zone</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody>
         ${rows.map(r => {
           const pa = parseFloat(r.prix_achat)||0;
           const tm = parseFloat(r.taux_marquage)||0;
           const fm = parseFloat(r.forfait_min)||40;
           const cl = parseFloat(r.cliche)||30;
           const m = parseFloat(r.margin)||2.7;
-          const qte = 100;
-          const marquage = Math.max(fm, tm * qte);
-          const total = pa * qte + marquage + cl;
-          const pvMin = pa > 0 && tm > 0 ? ((total / qte) * m).toFixed(2) : '—';
+          const q = 100;
+          const mk = Math.max(fm, tm*q);
+          const pv = pa>0&&tm>0 ? (((pa*q + mk + cl)/q)*m).toFixed(2) : null;
           return `<tr>
-            <td><span class="sku-badge">${r.sku}</span></td>
-            <td>${r.name||'—'}</td>
-            <td class="prix-cell">${pa > 0 ? pa.toFixed(3)+' €' : '—'}</td>
-            <td>${tm > 0 ? tm.toFixed(3)+' €/u (min '+fm+'€)' : '—'}</td>
+            <td><span class="sku-pill">${r.sku}</span></td>
+            <td style="font-weight:500">${r.name||'—'}</td>
+            <td class="price-val">${pa>0?pa.toFixed(3)+' €':'—'}</td>
+            <td>${tm>0?`<span class="status-ok">&#10003; Configure</span>`:`<span class="status-no">A remplir</span>`}</td>
             <td>×${m}</td>
-            <td class="prix-cell">${pvMin !== '—' ? pvMin+' €/u' : '—'}</td>
-            <td class="actions">
-              <a href="/configurateur?sku=${r.sku}" target="_blank"><button class="btn btn-sm">Voir</button></a>
-              <a href="/admin/zones/${r.sku}"><button class="btn btn-sm" style="background:#f0e9ff;color:#3b1f6e">Zones</button></a>
-              <button class="btn btn-sm" onclick="editProduct('${r.sku}','${r.name||''}',${pa},${m},${tm},${fm},${cl})">Modifier</button>
-              <button class="btn btn-sm btn-danger" onclick="deleteProduct('${r.sku}')">Supprimer</button>
+            <td class="price-val">${pv?pv+' €/u':'—'}</td>
+            <td>
+              <div class="actions">
+                <a href="/configurateur?sku=${r.sku}" target="_blank"><button class="btn-sm">Apercu</button></a>
+                <a href="/admin/zones/${r.sku}"><button class="btn-sm violet">Zones</button></a>
+                <button class="btn-sm" onclick="editProduct('${r.sku}','${(r.name||'').replace(/'/g,"\\'")}',${pa},${m},${tm},${fm},${cl})">Modifier</button>
+                <button class="btn-sm red" onclick="deleteProduct('${r.sku}')">Supprimer</button>
+              </div>
             </td>
           </tr>`;
         }).join('')}
       </tbody>
-    </table>
+    </table>`}
   </div>
 </div>
 <div class="toast" id="toast"></div>
+
 <script>
-function toast(msg, ok=true){
-  var t=document.getElementById('toast');
-  t.textContent=msg;t.style.background=ok?'#22c55e':'#ef4444';t.style.display='block';
-  setTimeout(()=>t.style.display='none', 2500);
+function toast(msg, ok){
+  ok = ok !== false;
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.style.background = ok ? '#1a1a1a' : '#dc2626';
+  t.style.display = 'block';
+  setTimeout(function(){ t.style.display='none'; }, 2500);
 }
 
-async function fetchShopifyVariants(){
-  var sku=document.getElementById('fSku').value.trim();
-  if(!sku)return;
-  var r=await fetch('/shopify-variants/'+sku).catch(()=>null);
-  if(!r||!r.ok)return;
-  var d=await r.json();
-  if(!d.variants||!d.variants.length)return;
-  var sel=document.getElementById('fVariant');
-  sel.innerHTML='<option value="">Selectionnez une variante...</option>';
-  d.variants.forEach(function(v){
-    var opt=document.createElement('option');
-    opt.value=v.price;
-    opt.textContent=v.title+' — '+v.price+' €';
-    sel.appendChild(opt);
-  });
-  document.getElementById('variantBlock').style.display='block';
-  if(!document.getElementById('fName').value && d.product) document.getElementById('fName').value=d.product;
+async function fetchVariants(){
+  var sku = document.getElementById('fSku').value.trim();
+  if(!sku) return;
+  try {
+    var r = await fetch('/shopify-variants/' + sku);
+    if(!r.ok) return;
+    var d = await r.json();
+    if(!d.variants || !d.variants.length) return;
+    var sel = document.getElementById('fVariant');
+    sel.innerHTML = '<option value="">Selectionnez une variante...</option>';
+    d.variants.forEach(function(v){
+      var opt = document.createElement('option');
+      opt.value = v.price;
+      opt.textContent = v.title + ' — ' + v.price + ' €';
+      sel.appendChild(opt);
+    });
+    document.getElementById('variantBlock').style.display = 'block';
+    if(!document.getElementById('fName').value && d.product)
+      document.getElementById('fName').value = d.product;
+  } catch(e) {}
 }
 
 function onVariantChange(){
-  var price=parseFloat(document.getElementById('fVariant').value)||0;
-  if(price>0){
-    document.getElementById('fPrix').value=price;
-    updatePreview();
-  }
+  var p = parseFloat(document.getElementById('fVariant').value) || 0;
+  if(p > 0){ document.getElementById('fPrix').value = p; updatePreview(); }
 }
 
 function updatePreview(){
-  var pa=parseFloat(document.getElementById('fPrix').value)||0;
-  var tm=parseFloat(document.getElementById('fTaux').value)||0;
-  var fm=parseFloat(document.getElementById('fForfait').value)||40;
-  var cl=parseFloat(document.getElementById('fCliche').value)||30;
-  var m=parseFloat(document.getElementById('fMargin').value)||2.7;
-  var el=document.getElementById('calcPreview');
-  if(pa>0&&tm>0){
-    function calc(q){ var mk=Math.max(fm,tm*q); return ((pa*q+mk+cl)/q*m).toFixed(2); }
-    el.textContent='Prix client : '+calc(50)+' €/u (×50) · '+calc(100)+' €/u (×100) · '+calc(250)+' €/u (×250) · '+calc(500)+' €/u (×500)';
-    el.style.color='#3b1f6e';
+  var pa = parseFloat(document.getElementById('fPrix').value)||0;
+  var tm = parseFloat(document.getElementById('fTaux').value)||0;
+  var fm = parseFloat(document.getElementById('fForfait').value)||40;
+  var cl = parseFloat(document.getElementById('fCliche').value)||30;
+  var m  = parseFloat(document.getElementById('fMargin').value)||2.7;
+  var box = document.getElementById('previewBox');
+  if(pa > 0 && tm > 0){
+    function calc(q){ return (((pa*q + Math.max(fm,tm*q) + cl)/q)*m).toFixed(2); }
+    box.style.display = 'block';
+    box.textContent = 'Prix client : ' + calc(50) + ' €/u (×50)  ·  ' + calc(100) + ' €/u (×100)  ·  ' + calc(250) + ' €/u (×250)  ·  ' + calc(500) + ' €/u (×500)';
   } else {
-    el.textContent='';
+    box.style.display = 'none';
   }
 }
 
 async function saveProduct(){
-  var sku=document.getElementById('fSku').value.trim();
-  var name=document.getElementById('fName').value.trim();
-  var prix=parseFloat(document.getElementById('fPrix').value)||0;
-  var taux=parseFloat(document.getElementById('fTaux').value)||0;
-  var forfait=parseFloat(document.getElementById('fForfait').value)||40;
-  var cliche=parseFloat(document.getElementById('fCliche').value)||30;
-  var margin=parseFloat(document.getElementById('fMargin').value)||2.7;
-  if(!sku){toast('SKU manquant', false);return;}
-  if(!prix){toast('Prix achat manquant', false);return;}
-  if(!taux){toast('Taux marquage manquant', false);return;}
-  var r=await fetch('/products',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({sku,name,prix_achat:prix,taux_marquage:taux,forfait_min:forfait,cliche,margin,config:{}})});
-  if(r.ok){toast('Produit enregistre');setTimeout(()=>location.reload(),1000);}
+  var sku    = document.getElementById('fSku').value.trim();
+  var name   = document.getElementById('fName').value.trim();
+  var prix   = parseFloat(document.getElementById('fPrix').value)||0;
+  var taux   = parseFloat(document.getElementById('fTaux').value)||0;
+  var forfait= parseFloat(document.getElementById('fForfait').value)||40;
+  var cliche = parseFloat(document.getElementById('fCliche').value)||30;
+  var margin = parseFloat(document.getElementById('fMargin').value)||2.7;
+  if(!sku){ toast('SKU manquant', false); return; }
+  if(!prix){ toast('Prix achat manquant', false); return; }
+  if(!taux){ toast('Taux marquage manquant', false); return; }
+  var r = await fetch('/products', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({sku, name, prix_achat:prix, taux_marquage:taux, forfait_min:forfait, cliche, margin, config:{}})
+  });
+  if(r.ok){ toast('Produit enregistre'); setTimeout(function(){ location.reload(); }, 1000); }
   else toast('Erreur', false);
 }
 
-function editProduct(sku,name,prix,margin,taux,forfait,cliche){
-  document.getElementById('fSku').value=sku;
-  document.getElementById('fName').value=name;
-  document.getElementById('fPrix').value=prix;
-  document.getElementById('fMargin').value=margin;
-  document.getElementById('fTaux').value=taux||'';
-  document.getElementById('fForfait').value=forfait||40;
-  document.getElementById('fCliche').value=cliche||30;
+function editProduct(sku, name, prix, margin, taux, forfait, cliche){
+  document.getElementById('fSku').value    = sku;
+  document.getElementById('fName').value   = name;
+  document.getElementById('fPrix').value   = prix;
+  document.getElementById('fMargin').value = margin;
+  document.getElementById('fTaux').value   = taux || '';
+  document.getElementById('fForfait').value= forfait || 40;
+  document.getElementById('fCliche').value = cliche || 30;
   updatePreview();
-  window.scrollTo({top:0,behavior:'smooth'});
+  window.scrollTo({top: 0, behavior:'smooth'});
 }
 
 async function deleteProduct(sku){
-  if(!confirm('Supprimer '+sku+' ?'))return;
-  var r=await fetch('/products/'+sku,{method:'DELETE'});
-  if(r.ok){toast('Supprime');setTimeout(()=>location.reload(),1000);}
+  if(!confirm('Supprimer ' + sku + ' ?')) return;
+  var r = await fetch('/products/' + sku, {method:'DELETE'});
+  if(r.ok){ toast('Supprime'); setTimeout(function(){ location.reload(); }, 1000); }
   else toast('Erreur', false);
 }
 </script>
 </body>
 </html>`;
-  res.setHeader('Content-Type','text/html; charset=utf-8');
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
   res.send(html);
 });
 
