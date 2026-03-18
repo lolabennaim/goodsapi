@@ -752,6 +752,15 @@ function onLogoReady(file,b64,imgEl){
       selectedZones[firstIdx]=true;
       activeZoneIdx=firstIdx;
       applyLogoToZone(firstIdx);
+      // Forcer la position immédiatement
+      var zone=config.zones[firstIdx];
+      if(zone&&zone.pts){
+        var xs=zone.pts.map(function(p){return p.x*scale;});
+        var ys=zone.pts.map(function(p){return p.y*scale;});
+        var zx=Math.min.apply(null,xs),zy=Math.min.apply(null,ys);
+        var zw=Math.max.apply(null,xs)-zx,zh=Math.max.apply(null,ys)-zy;
+        initLogoPos(firstIdx,zx,zy,zw,zh);
+      }
     }
   }
 
