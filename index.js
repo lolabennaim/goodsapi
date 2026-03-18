@@ -197,8 +197,8 @@ body{font-family:'Inter',sans-serif;background:#fff;color:#1a1a1a;font-size:14px
         <div class="step-summary" id="ssum1"></div>
       </div>
       <div class="step-body open" id="sbody1">
-        <div class="upload-drop" id="uploadDrop">
-          <input type="file" accept=".pdf,.ai,application/pdf" id="logoInput" onchange="onLogoUpload(this)" style="font-size:0">
+        <input type="file" accept=".pdf,.ai,application/pdf" id="logoInput" onchange="onLogoUpload(this)" style="position:fixed;left:-9999px;opacity:0;width:1px;height:1px">
+        <div class="upload-drop" id="uploadDrop" onclick="document.getElementById('logoInput').click()">
           <div class="up-icon" id="upIcon">\uD83D\uDCC1</div>
           <div class="up-title" id="upTitle">Clique pour uploader ton logo</div>
           <div class="up-sub">PDF ou AI vectoris\u00e9 uniquement</div>
