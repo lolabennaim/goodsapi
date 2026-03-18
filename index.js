@@ -780,7 +780,9 @@ function onLogoReady(file,b64,imgEl){
   document.getElementById('bgRemoveStatus').textContent='Image: '+natW+'x'+natH+'px';
   markStepDone(1,file.name);
   openStep(2);
-  buildZoneList();
+  buildZones();
+  markStepDone(2,'1 zone');
+  openStep(3);
   renderCanvas();
   updateCTA();updatePrix();
 }
