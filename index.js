@@ -603,14 +603,12 @@ function onLogoUpload(input){
     if(isPDF&&window.pdfjsLib&&window.pdfjsLib.getDocument){
       doRenderPDF(file,b64);
     } else {
-      // AI ou PDF.js indisponible : placeholder visuel
       makeImgFromCanvas(isAI?'AI':'PDF',function(im){onLogoReady(file,b64,im);});
     }
   };
   r.readAsDataURL(file);
 }
 
-// Crée une Image depuis un canvas offscreen, garantit naturalWidth>0 via onload
 function makeImgFromCanvas(label,cb){
   var oc=document.createElement('canvas');oc.width=400;oc.height=200;
   var c=oc.getContext('2d');
@@ -623,33 +621,67 @@ function makeImgFromCanvas(label,cb){
 }
 
 function doRenderPDF(file,b64){
+  // Essai 1 : PDF.js
   var raw=atob(b64.split(',')[1]);
   var arr=new Uint8Array(raw.length);
   for(var i=0;i<raw.length;i++)arr[i]=raw.charCodeAt(i);
-  window.pdfjsLib.getDocument({data:arr}).promise
+  var pdfTask=window.pdfjsLib.getDocument({data:arr});
+  // Timeout de 5s — si PDF.js ne répond pas, on bascule sur le fallback
+  var timedOut=false;
+  var timer=setTimeout(function(){
+    timedOut=true;
+    console.warn('PDF.js timeout, fallback img');
+    tryImgFallback(file,b64);
+  },5000);
+  pdfTask.promise
     .then(function(pdf){return pdf.getPage(1);})
     .then(function(page){
+      if(timedOut)return;
+      clearTimeout(timer);
       var vp=page.getViewport({scale:2});
       var oc=document.createElement('canvas');oc.width=vp.width;oc.height=vp.height;
       return page.render({canvasContext:oc.getContext('2d'),viewport:vp}).promise
-        .then(function(){return oc.toDataURL('image/png');});
-    })
-    .then(function(dataURL){
-      var im=new Image();
-      im.onload=function(){onLogoReady(file,b64,im);};
-      im.src=dataURL;
+        .then(function(){
+          if(timedOut)return;
+          var dataURL=oc.toDataURL('image/png');
+          var im=new Image();
+          im.onload=function(){onLogoReady(file,b64,im);};
+          im.src=dataURL;
+        });
     })
     .catch(function(err){
-      console.warn('PDF.js failed, using placeholder',err);
-      makeImgFromCanvas('PDF',function(im){onLogoReady(file,b64,im);});
+      if(timedOut)return;
+      clearTimeout(timer);
+      console.warn('PDF.js error:',err);
+      tryImgFallback(file,b64);
     });
+}
+
+// Fallback : essayer d'afficher le PDF via <img> (marche sur certains navigateurs)
+// Sinon placeholder
+function tryImgFallback(file,b64){
+  var im=new Image();
+  im.onload=function(){
+    if(im.naturalWidth>0&&im.naturalHeight>0){
+      onLogoReady(file,b64,im);
+    } else {
+      makeImgFromCanvas('PDF',function(ph){onLogoReady(file,b64,ph);});
+    }
+  };
+  im.onerror=function(){
+    makeImgFromCanvas('PDF',function(ph){onLogoReady(file,b64,ph);});
+  };
+  // Tenter un object URL
+  var url=URL.createObjectURL(file);
+  im.src=url;
 }
 
 function onLogoReady(file,b64,imgEl){
   // Vérifier que l'image est bien chargée
   if(!imgEl||!imgEl.naturalWidth||!imgEl.naturalHeight){
     document.getElementById('loadingOverlay').style.display='none';
-    console.error('Logo image invalide',imgEl);return;
+    document.getElementById('bgRemoveStatus').textContent='Erreur: image invalide ('+( imgEl?imgEl.naturalWidth+'x'+imgEl.naturalHeight:'null')+')';
+    return;
   }
   var natW=imgEl.naturalWidth;
   var natH=imgEl.naturalHeight;
@@ -673,7 +705,9 @@ function onLogoReady(file,b64,imgEl){
       applyLogoToZone(firstIdx);
       sizeCanvas();
       var r=getZoneCanvasRect(firstIdx);
-      if(r) initLogoPos(firstIdx, r.zx, r.zy, r.zw, r.zh);
+      if(r){
+        initLogoPos(firstIdx, r.zx, r.zy, r.zw, r.zh);
+      }
     }
   }
 
@@ -687,12 +721,12 @@ function onLogoReady(file,b64,imgEl){
   if(imgEl.src){var ti=document.createElement('img');ti.src=imgEl.src;thumb.innerHTML='';thumb.appendChild(ti);}
   document.getElementById('fileRow').style.display='block';
   document.getElementById('bgRemoveWrap').style.display='block';
+  document.getElementById('bgRemoveStatus').textContent='Image: '+natW+'x'+natH+'px';
   markStepDone(1,file.name);
   openStep(2);
   buildZoneList();
   renderCanvas();
   updateCTA();updatePrix();
-  // Détourage automatique après un court délai
   setTimeout(function(){ removeBg(); }, 600);
 }
 
