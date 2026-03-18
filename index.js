@@ -441,6 +441,14 @@ function renderCanvas(){
         }
       }
       if(lg.rw===undefined)return;
+      // Si zone trop petite, recalculer
+      if(zw<5||zh<5){
+        var cw2=cv.width/(window.devicePixelRatio||1);
+        var ch2=cv.height/(window.devicePixelRatio||1);
+        zx=cw2*0.1;zy=ch2*0.1;zw=cw2*0.8;zh=ch2*0.8;
+        lg.rw=undefined; // forcer recalcul
+        initLogoPos(idx,zx,zy,zw,zh);
+      }
       var lx=zx+lg.rx*zw, ly=zy+lg.ry*zh, lw=lg.rw*zw, lh=lg.rh*zh;
       lg.x=lx;lg.y=ly;lg.w=lw;lg.h=lh;
       lg._zx=zx;lg._zy=zy;lg._zw=zw;lg._zh=zh;
@@ -463,20 +471,31 @@ function renderCanvas(){
 
 function initLogoPos(idx,zx,zy,zw,zh){
   var lg=logos[idx];if(!lg||!lg.imgEl)return;
+  // Si la zone est trop petite (scale mal calculé), forcer des dimensions minimales
+  if(!zw||!zh||zw<5||zh<5){
+    // Fallback : utiliser 40% du canvas
+    var cw=cv.width/(window.devicePixelRatio||1);
+    var ch=cv.height/(window.devicePixelRatio||1);
+    zx=cw*0.1; zy=ch*0.1; zw=cw*0.8; zh=ch*0.8;
+  }
   var natW=lg.imgEl.naturalWidth||200;
   var natH=lg.imgEl.naturalHeight||200;
   var aspect=natW/natH;
   var pw,ph;
   if(aspect>=1){
-    pw=zw*0.95; ph=pw/aspect;
-    if(ph>zh*0.95){ph=zh*0.95; pw=ph*aspect;}
+    pw=zw*0.9; ph=pw/aspect;
+    if(ph>zh*0.9){ph=zh*0.9; pw=ph*aspect;}
   } else {
-    ph=zh*0.95; pw=ph*aspect;
-    if(pw>zw*0.95){pw=zw*0.95; ph=pw/aspect;}
+    ph=zh*0.9; pw=ph*aspect;
+    if(pw>zw*0.9){pw=zw*0.9; ph=pw/aspect;}
   }
-  pw=Math.min(pw,zw); ph=Math.min(ph,zh);
+  pw=Math.max(10,Math.min(pw,zw));
+  ph=Math.max(10,Math.min(ph,zh));
   lg.rw=pw/zw; lg.rh=ph/zh;
   lg.rx=(1-lg.rw)/2; lg.ry=(1-lg.rh)/2;
+  // Log visible
+  var st=document.getElementById('bgRemoveStatus');
+  if(st) st.textContent='Zone: '+Math.round(zw)+'x'+Math.round(zh)+'px | Logo: '+Math.round(pw)+'x'+Math.round(ph)+'px';
 }
 
 // ── BIND CANVAS ──────────────────────────────────────────────────────────────
@@ -704,9 +723,20 @@ function onLogoReady(file,b64,imgEl){
       activeZoneIdx=firstIdx;
       applyLogoToZone(firstIdx);
       sizeCanvas();
-      var r=getZoneCanvasRect(firstIdx);
-      if(r){
-        initLogoPos(firstIdx, r.zx, r.zy, r.zw, r.zh);
+      var zone=config.zones[firstIdx];
+      if(zone&&zone.pts&&zone.pts.length>=4){
+        // Calculer les coords — si pas d'image (scale=1 et canvas vide), utiliser taille canvas ou fallback
+        var xs=zone.pts.map(function(p){return p.x*scale;});
+        var ys=zone.pts.map(function(p){return p.y*scale;});
+        var rzx=Math.min.apply(null,xs), rzy=Math.min.apply(null,ys);
+        var rzw=Math.max.apply(null,xs)-rzx, rzh=Math.max.apply(null,ys)-rzy;
+        // Si zone trop petite (image pas chargée), forcer des coords raisonnables
+        if(rzw<10||rzh<10){
+          var ww=document.getElementById('imgWrap').clientWidth||400;
+          var hh=document.getElementById('imgWrap').clientHeight||400;
+          rzx=ww*0.1; rzy=hh*0.1; rzw=ww*0.8; rzh=hh*0.8;
+        }
+        initLogoPos(firstIdx, rzx, rzy, rzw, rzh);
       }
     }
   }
@@ -788,8 +818,19 @@ function removeBg(){
       var idx=parseInt(idxStr);
       logos[idx].imgEl=newImg;
       logos[idx].b64=newDataURL;
-      var r=getZoneCanvasRect(idx);
-      if(r) initLogoPos(idx, r.zx, r.zy, r.zw, r.zh);
+      var zone=config&&config.zones&&config.zones[idx];
+      if(zone&&zone.pts&&zone.pts.length>=4){
+        var xs=zone.pts.map(function(p){return p.x*scale;});
+        var ys=zone.pts.map(function(p){return p.y*scale;});
+        var rzx=Math.min.apply(null,xs),rzy=Math.min.apply(null,ys);
+        var rzw=Math.max.apply(null,xs)-rzx,rzh=Math.max.apply(null,ys)-rzy;
+        if(rzw<10||rzh<10){
+          var ww=document.getElementById('imgWrap').clientWidth||400;
+          var hh=document.getElementById('imgWrap').clientHeight||400;
+          rzx=ww*0.1;rzy=hh*0.1;rzw=ww*0.8;rzh=hh*0.8;
+        }
+        initLogoPos(idx,rzx,rzy,rzw,rzh);
+      }
     });
     var thumb=document.getElementById('fileThumb');
     var ti=document.createElement('img');ti.src=newDataURL;thumb.innerHTML='';thumb.appendChild(ti);
