@@ -497,9 +497,14 @@ function renderCanvas(){
 
 function initLogoPos(idx,zx,zy,zw,zh){
   var lg=logos[idx];if(!lg||!lg.imgEl)return;
-  // Si la zone est trop petite (scale mal calculé), forcer des dimensions minimales
+  var zone=config&&config.zones&&config.zones[idx];
+  // En mode perspective : le logo occupe toute la zone (rw=rh=1, rx=ry=0)
+  if(zone&&zone.mode==='perspective'){
+    lg.rw=0.9; lg.rh=0.9;
+    lg.rx=0.05; lg.ry=0.05;
+    return;
+  }
   if(!zw||!zh||zw<5||zh<5){
-    // Fallback : utiliser 40% du canvas
     var cw=cv.width/(window.devicePixelRatio||1);
     var ch=cv.height/(window.devicePixelRatio||1);
     zx=cw*0.1; zy=ch*0.1; zw=cw*0.8; zh=ch*0.8;
@@ -519,8 +524,6 @@ function initLogoPos(idx,zx,zy,zw,zh){
   ph=Math.max(10,Math.min(ph,zh));
   lg.rw=pw/zw; lg.rh=ph/zh;
   lg.rx=(1-lg.rw)/2; lg.ry=(1-lg.rh)/2;
-  var st=document.getElementById('bgRemoveStatus');
-  if(st) st.textContent='Zone: '+Math.round(zw)+'x'+Math.round(zh)+'px | Logo: '+Math.round(pw)+'x'+Math.round(ph)+'px';
 }
 
 // Rendu du logo avec déformation perspective (subdivision bilinéaire)
