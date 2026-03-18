@@ -17,7 +17,7 @@ async function init() {
       sku TEXT PRIMARY KEY,
       name TEXT,
       config JSONB,
-      margin NUMERIC DEFAULT 2.7,
+      margin NUMERIC DEFAULT 2.5,
       prix_achat NUMERIC DEFAULT 0,
       taux_marquage NUMERIC DEFAULT 0,
       forfait_min NUMERIC DEFAULT 40,
@@ -27,7 +27,7 @@ async function init() {
     )
   `);
   await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS prix_achat NUMERIC DEFAULT 0`).catch(()=>{});
-  await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS margin NUMERIC DEFAULT 2.7`).catch(()=>{});
+  await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS margin NUMERIC DEFAULT 2.5`).catch(()=>{});
   await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS taux_marquage NUMERIC DEFAULT 0`).catch(()=>{});
   await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS forfait_min NUMERIC DEFAULT 40`).catch(()=>{});
   await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS paliers JSONB DEFAULT '[]'`).catch(()=>{});
@@ -288,7 +288,7 @@ body{font-family:'Inter',sans-serif;background:#fff;color:#1a1a1a;font-size:14px
 
 <script>
 var API_URL='https://goodsapi-production.up.railway.app';
-var MARGIN=2.7;
+var MARGIN=2.5;
 var PRIX_ACHAT=0;
 var PALIERS=[]; // [{min:0,taux:0}] — dégressif par quantité
 var FORFAIT_MIN=40;
@@ -332,7 +332,7 @@ async function init(){
   try{
     var res=await fetch(API_URL+'/products/'+sku);
     if(!res.ok)throw 0;
-    var d=await res.json();config=d.config;MARGIN=parseFloat(d.margin)||2.7;PRIX_ACHAT=parseFloat(d.prix_achat)||0;
+    var d=await res.json();config=d.config;MARGIN=parseFloat(d.margin)||2.5;PRIX_ACHAT=parseFloat(d.prix_achat)||0;
     PALIERS=d.paliers&&d.paliers.length ? d.paliers : (d.taux_marquage ? [{min:0,taux:parseFloat(d.taux_marquage)}] : []);
     FORFAIT_MIN=parseFloat(d.forfait_min)||40;
     CLICHE=parseFloat(d.cliche)||30;
@@ -1408,7 +1408,7 @@ body{font-family:'DM Sans',sans-serif;background:#f8f7f5;color:#1a1a1a;min-heigh
     </div>
     <div class="dash-card">
       <div class="dash-label">Marge par defaut</div>
-      <div class="dash-value">\u00d72,7</div>
+      <div class="dash-value">\u00d72,5</div>
       <div class="dash-sub">appliquee sur tous les produits</div>
     </div>
   </div>
@@ -1418,7 +1418,7 @@ body{font-family:'DM Sans',sans-serif;background:#f8f7f5;color:#1a1a1a;min-heigh
       <div class="form-row">
         <div class="fld"><label>SKU Makito</label><input id="fSku" placeholder="22022" onblur="fetchVariants()"/></div>
         <div class="fld"><label>Nom du produit</label><input id="fName" placeholder="T-shirt Adulte Epika"/></div>
-        <div class="fld"><label>Marge (multiplicateur)</label><input id="fMargin" type="number" step="0.1" value="2.7" oninput="updatePreview()"/></div>
+        <div class="fld"><label>Marge (multiplicateur)</label><input id="fMargin" type="number" step="0.1" value="2.5" oninput="updatePreview()"/></div>
       </div>
       <div class="variant-select" id="variantBlock">
         <div class="fld"><label>Variante Shopify \u2014 prix d\u2019achat auto</label>
@@ -1452,7 +1452,7 @@ body{font-family:'DM Sans',sans-serif;background:#f8f7f5;color:#1a1a1a;min-heigh
         ${rows.map(r => {
           const pa=parseFloat(r.prix_achat)||0;
           const tm=parseFloat(r.taux_marquage)||0;
-          const fm=parseFloat(r.forfait_min)||40,cl=parseFloat(r.cliche)||30,m=parseFloat(r.margin)||2.7;
+          const fm=parseFloat(r.forfait_min)||40,cl=parseFloat(r.cliche)||30,m=parseFloat(r.margin)||2.5;
           const q=100, mk=Math.max(fm,tm*q);
           const pv=pa>0&&tm>0?(((pa*q+mk+cl)/q)*m).toFixed(2):null;
           return `<tr>
@@ -1483,7 +1483,7 @@ function updatePreview(){
   var tm=parseFloat(document.getElementById('fTaux').value)||0;
   var fm=parseFloat(document.getElementById('fForfait').value)||40;
   var cl=parseFloat(document.getElementById('fCliche').value)||30;
-  var m=parseFloat(document.getElementById('fMargin').value)||2.7;
+  var m=parseFloat(document.getElementById('fMargin').value)||2.5;
   // Seuil de bascule
   var seuil=tm>0?Math.ceil(fm/tm):0;
   var seuilEl=document.getElementById('seuilInfo');
@@ -1521,7 +1521,7 @@ async function saveProduct(){
   var taux=parseFloat(document.getElementById('fTaux').value)||0;
   var forfait=parseFloat(document.getElementById('fForfait').value)||40;
   var cliche=parseFloat(document.getElementById('fCliche').value)||30;
-  var margin=parseFloat(document.getElementById('fMargin').value)||2.7;
+  var margin=parseFloat(document.getElementById('fMargin').value)||2.5;
   if(!sku){toast('SKU manquant',false);return;}
   if(!prix){toast('Prix achat manquant',false);return;}
   if(!taux){toast('Taux marquage manquant',false);return;}
@@ -1565,7 +1565,7 @@ app.get('/admin/zones/:sku', async (req, res) => {
   const config = prod ? (prod.config||{}) : {};
   const configJson = JSON.stringify(config).replace(/`/g,'\\`').replace(/\$/g,'\\$');
   const prodName = (prod&&prod.name)||sku;
-  const margin = (prod&&prod.margin)||2.7;
+  const margin = (prod&&prod.margin)||2.5;
   const prixAchat = (prod&&prod.prix_achat)||0;
 
   const html = `<!DOCTYPE html>
