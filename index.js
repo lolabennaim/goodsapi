@@ -600,15 +600,26 @@ function onLogoUpload(input){
   var r=new FileReader();
   r.onload=function(e){
     var b64=e.target.result;input.value='';
-    function readyOrWait(ph){
-      if(ph.complete&&ph.naturalWidth>0){onLogoReady(file,b64,ph);}
-      else{ph.onload=function(){onLogoReady(file,b64,ph);};}
+    if(isPDF&&window.pdfjsLib&&window.pdfjsLib.getDocument){
+      doRenderPDF(file,b64);
+    } else {
+      // AI ou PDF.js indisponible : placeholder visuel
+      makeImgFromCanvas(isAI?'AI':'PDF',function(im){onLogoReady(file,b64,im);});
     }
-    if(isAI){readyOrWait(makePlaceholder('AI'));return;}
-    if(window.pdfjsLib&&window.pdfjsLib.getDocument){doRenderPDF(file,b64);}
-    else readyOrWait(makePlaceholder('PDF'));
   };
   r.readAsDataURL(file);
+}
+
+// Crée une Image depuis un canvas offscreen, garantit naturalWidth>0 via onload
+function makeImgFromCanvas(label,cb){
+  var oc=document.createElement('canvas');oc.width=400;oc.height=200;
+  var c=oc.getContext('2d');
+  c.fillStyle='#ede9ff';c.fillRect(0,0,400,200);
+  c.fillStyle='#5b3de8';c.font='bold 48px sans-serif';c.textAlign='center';c.textBaseline='middle';
+  c.fillText(label,200,100);
+  var im=new Image();
+  im.onload=function(){cb(im);};
+  im.src=oc.toDataURL('image/png');
 }
 
 function doRenderPDF(file,b64){
@@ -620,19 +631,28 @@ function doRenderPDF(file,b64){
     .then(function(page){
       var vp=page.getViewport({scale:2});
       var oc=document.createElement('canvas');oc.width=vp.width;oc.height=vp.height;
-      return page.render({canvasContext:oc.getContext('2d'),viewport:vp}).promise.then(function(){return oc.toDataURL('image/png');});
+      return page.render({canvasContext:oc.getContext('2d'),viewport:vp}).promise
+        .then(function(){return oc.toDataURL('image/png');});
     })
-    .then(function(dataURL){var im=new Image();im.onload=function(){onLogoReady(file,b64,im);};im.src=dataURL;})
-    .catch(function(){
-      var ph=makePlaceholder('PDF');
-      if(ph.complete&&ph.naturalWidth>0){onLogoReady(file,b64,ph);}
-      else{ph.onload=function(){onLogoReady(file,b64,ph);};}
+    .then(function(dataURL){
+      var im=new Image();
+      im.onload=function(){onLogoReady(file,b64,im);};
+      im.src=dataURL;
+    })
+    .catch(function(err){
+      console.warn('PDF.js failed, using placeholder',err);
+      makeImgFromCanvas('PDF',function(im){onLogoReady(file,b64,im);});
     });
 }
 
 function onLogoReady(file,b64,imgEl){
-  var natW=imgEl.naturalWidth||imgEl.width||1;
-  var natH=imgEl.naturalHeight||imgEl.height||1;
+  // Vérifier que l'image est bien chargée
+  if(!imgEl||!imgEl.naturalWidth||!imgEl.naturalHeight){
+    document.getElementById('loadingOverlay').style.display='none';
+    console.error('Logo image invalide',imgEl);return;
+  }
+  var natW=imgEl.naturalWidth;
+  var natH=imgEl.naturalHeight;
   if(natH>natW*1.2){
     document.getElementById('loadingOverlay').style.display='none';
     alert('Logo en format portrait d\u00e9tect\u00e9. Utilise un logo en format carr\u00e9 ou paysage.');
@@ -641,7 +661,7 @@ function onLogoReady(file,b64,imgEl){
   sharedLogo={file:file,b64:b64,imgEl:imgEl};
   document.getElementById('loadingOverlay').style.display='none';
 
-  // Auto-s\u00e9lectionner la premi\u00e8re zone et placer le logo
+  // Auto-placer dans la première zone visible
   if(Object.keys(selectedZones).length===0){
     var firstIdx=-1;
     for(var zi=0;zi<config.zones.length;zi++){
@@ -651,7 +671,7 @@ function onLogoReady(file,b64,imgEl){
       selectedZones[firstIdx]=true;
       activeZoneIdx=firstIdx;
       applyLogoToZone(firstIdx);
-      sizeCanvas(); // garantit que scale est calculé avant getZoneCanvasRect
+      sizeCanvas();
       var r=getZoneCanvasRect(firstIdx);
       if(r) initLogoPos(firstIdx, r.zx, r.zy, r.zw, r.zh);
     }
@@ -670,9 +690,10 @@ function onLogoReady(file,b64,imgEl){
   markStepDone(1,file.name);
   openStep(2);
   buildZoneList();
-  renderCanvas();updateCTA();updatePrix();
-  // D\u00e9tourage automatique
-  setTimeout(function(){ removeBg(); }, 400);
+  renderCanvas();
+  updateCTA();updatePrix();
+  // Détourage automatique après un court délai
+  setTimeout(function(){ removeBg(); }, 600);
 }
 
 function applyLogoToZone(idx){
@@ -695,10 +716,14 @@ function removeBg(){
   var btn=document.getElementById('bgRemoveBtn');
   var status=document.getElementById('bgRemoveStatus');
   if(!sharedLogo||!sharedLogo.imgEl)return;
+  var img=sharedLogo.imgEl;
+  // Si l'image n'a pas de contenu réel (placeholder sans vrai rendu), on skip
+  if(!img.naturalWidth||!img.naturalHeight){
+    btn.style.display='none';return;
+  }
   btn.disabled=true;btn.style.opacity='0.6';
   status.textContent='Traitement en cours...';
 
-  var img=sharedLogo.imgEl;
   var oc=document.createElement('canvas');
   oc.width=img.naturalWidth;oc.height=img.naturalHeight;
   var c=oc.getContext('2d');
@@ -708,9 +733,9 @@ function removeBg(){
 
   function getCornerColor(x,y){var i=(y*oc.width+x)*4;return{r:px[i],g:px[i+1],b:px[i+2]};}
   var corners=[getCornerColor(0,0),getCornerColor(oc.width-1,0),getCornerColor(0,oc.height-1),getCornerColor(oc.width-1,oc.height-1)];
-  var bgR=Math.round(corners.reduce(function(s,c){return s+c.r;},0)/4);
-  var bgG=Math.round(corners.reduce(function(s,c){return s+c.g;},0)/4);
-  var bgB=Math.round(corners.reduce(function(s,c){return s+c.b;},0)/4);
+  var bgR=Math.round(corners.reduce(function(s,cv){return s+cv.r;},0)/4);
+  var bgG=Math.round(corners.reduce(function(s,cv){return s+cv.g;},0)/4);
+  var bgB=Math.round(corners.reduce(function(s,cv){return s+cv.b;},0)/4);
 
   var tolerance=40;var removed=0;
   for(var i=0;i<px.length;i+=4){
@@ -725,22 +750,15 @@ function removeBg(){
   newImg.onload=function(){
     sharedLogo.imgEl=newImg;
     sharedLogo.b64=newDataURL;
-
-    // ── FIX : mettre \u00e0 jour chaque logo ET recalculer la position ──────────────
     Object.keys(logos).forEach(function(idxStr){
       var idx=parseInt(idxStr);
       logos[idx].imgEl=newImg;
       logos[idx].b64=newDataURL;
-      // Recalculer la position avec les dimensions de la nouvelle image
       var r=getZoneCanvasRect(idx);
       if(r) initLogoPos(idx, r.zx, r.zy, r.zw, r.zh);
     });
-    // ─────────────────────────────────────────────────────────────────────────
-
-    // Mettre \u00e0 jour le thumb
     var thumb=document.getElementById('fileThumb');
     var ti=document.createElement('img');ti.src=newDataURL;thumb.innerHTML='';thumb.appendChild(ti);
-
     btn.disabled=false;btn.style.opacity='1';
     btn.querySelector('.label').textContent='Fond retir\u00e9';
     btn.querySelector('.badge').textContent='OK';
