@@ -458,6 +458,7 @@ function renderCanvas(){
 
     if(hasLogo){
       var lg=logos[idx];
+      // Initialiser position si pas encore fait
       if(lg.rw===undefined){
         if(lg.imgEl.complete&&lg.imgEl.naturalWidth>0){
           initLogoPos(idx,zx,zy,zw,zh);
@@ -467,19 +468,16 @@ function renderCanvas(){
         }
       }
       if(lg.rw===undefined)return;
-      // Si zone trop petite, recalculer
-      if(zw<5||zh<5){
-        var cw2=cv.width/(window.devicePixelRatio||1);
-        var ch2=cv.height/(window.devicePixelRatio||1);
-        zx=cw2*0.1;zy=ch2*0.1;zw=cw2*0.8;zh=ch2*0.8;
-        lg.rw=undefined; // forcer recalcul
-        initLogoPos(idx,zx,zy,zw,zh);
-      }
-      var lx=zx+lg.rx*zw, ly=zy+lg.ry*zh, lw=lg.rw*zw, lh=lg.rh*zh;
+      // Calculer position absolue sur le canvas
+      var lx=zx+lg.rx*zw;
+      var ly=zy+lg.ry*zh;
+      var lw=lg.rw*zw;
+      var lh=lg.rh*zh;
+      // Sauvegarder pour drag/resize
       lg.x=lx;lg.y=ly;lg.w=lw;lg.h=lh;
       lg._zx=zx;lg._zy=zy;lg._zw=zw;lg._zh=zh;
+      // Dessiner sans clip pour garantir la visibilité
       ctx.save();
-      ctx.beginPath();ctx.rect(zx,zy,zw,zh);ctx.clip();
       ctx.drawImage(lg.imgEl,lx,ly,lw,lh);
       if(idx===activeZoneIdx){
         ctx.strokeStyle='#5b3de8';ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
@@ -785,7 +783,6 @@ function onLogoReady(file,b64,imgEl){
   buildZoneList();
   renderCanvas();
   updateCTA();updatePrix();
-  setTimeout(function(){ removeBg(); }, 600);
 }
 
 function applyLogoToZone(idx){
