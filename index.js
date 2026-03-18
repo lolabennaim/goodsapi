@@ -451,7 +451,7 @@ function renderCanvas(){
     if(isSel&&!hasLogo){
       ctx.save();
       ctx.beginPath();
-      if(zone.mode==='ellipse'){
+      if(zone.mode==='ellipse'||zone.mode==='ellipse-perspective'){
         ctx.ellipse(zx+zw/2,zy+zh/2,zw/2,zh/2,0,0,Math.PI*2);
       } else {
         ctx.rect(zx,zy,zw,zh);
@@ -482,6 +482,11 @@ function renderCanvas(){
       if(zone.mode==='perspective'&&zone.pts&&zone.pts.length===4){
         var pts=zone.pts.map(function(p){return{x:p.x*scale,y:p.y*scale};});
         drawLogoWithPerspective(ctx,lg,pts,idx);
+      } else if(zone.mode==='ellipse-perspective'&&zone.pts&&zone.pts.length===4){
+        // Ellipse + perspective : clip ellipse sur bounding box, puis rendu perspective
+        ctx.beginPath();ctx.ellipse(zx+zw/2,zy+zh/2,zw/2,zh/2,0,0,Math.PI*2);ctx.clip();
+        var pts2=zone.pts.map(function(p){return{x:p.x*scale,y:p.y*scale};});
+        drawLogoWithPerspective(ctx,lg,pts2,idx);
       } else if(zone.mode==='ellipse'){
         // Clip ellipse + dessiner logo
         ctx.beginPath();ctx.ellipse(zx+zw/2,zy+zh/2,zw/2,zh/2,0,0,Math.PI*2);ctx.clip();
@@ -516,7 +521,7 @@ function initLogoPos(idx,zx,zy,zw,zh){
   var lg=logos[idx];if(!lg||!lg.imgEl)return;
   var zone=config&&config.zones&&config.zones[idx];
   // En mode perspective : le logo occupe toute la zone (rw=rh=1, rx=ry=0)
-  if(zone&&zone.mode==='perspective'){
+  if(zone&&(zone.mode==='perspective'||zone.mode==='ellipse-perspective')){
     lg.rw=0.9; lg.rh=0.9;
     lg.rx=0.05; lg.ry=0.05;
     return;
@@ -1678,10 +1683,13 @@ body{font-family:'Inter',sans-serif;background:#111;color:#1a1a1a;min-height:100
           <div class="fld"><label>Max mm</label><input id="pMaxMm" type="number" oninput="liveUpd()"/></div>
         </div>
         <div class="sec">Mode zone</div>
-        <div style="display:flex;gap:6px;margin-bottom:8px">
+        <div style="display:flex;gap:6px;margin-bottom:4px">
           <button id="modeRect" onclick="setZoneMode('rect')" style="flex:1;padding:6px;border-radius:6px;border:1.5px solid #3b1f6e;background:#f5f0ff;color:#3b1f6e;font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">Rectangle</button>
           <button id="modeEllipse" onclick="setZoneMode('ellipse')" style="flex:1;padding:6px;border-radius:6px;border:1.5px solid #eee;background:#fff;color:#555;font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">Ellipse</button>
+        </div>
+        <div style="display:flex;gap:6px;margin-bottom:8px">
           <button id="modePers" onclick="setZoneMode('perspective')" style="flex:1;padding:6px;border-radius:6px;border:1.5px solid #eee;background:#fff;color:#555;font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">Perspective</button>
+          <button id="modeEllipsePers" onclick="setZoneMode('ellipse-perspective')" style="flex:1;padding:6px;border-radius:6px;border:1.5px solid #eee;background:#fff;color:#555;font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">Ellipse + Persp.</button>
         </div>
         <div class="sec">Position exacte</div>
         <div class="frow">
@@ -1862,7 +1870,7 @@ function getZoneRect(z){
   return{x:x,y:y,w:Math.max.apply(null,xs)-x,h:Math.max.apply(null,ys)-y};
 }
 
-function setZoneRect(z,x,y,w,h){z.pts=[{x:x,y:y},{x:x+w,y:y},{x:x+w,y:y+h},{x:x,y:y+h}];z.mode='rect';}
+function setZoneRect(z,x,y,w,h){z.pts=[{x:x,y:y},{x:x+w,y:y},{x:x+w,y:y+h},{x:x,y:y+h}];if(!z.mode||z.mode==='rect')z.mode='rect';}
 
 function setZoneMode(mode){
   if(activeIdx===null)return;config.zones[activeIdx].mode=mode;updModeButtons();render();
@@ -1871,9 +1879,9 @@ function setZoneMode(mode){
 function updModeButtons(){
   if(activeIdx===null)return;
   var m=(config.zones[activeIdx].mode)||'rect';
-  ['rect','ellipse','perspective'].forEach(function(mode){
-    var btn=document.getElementById('mode'+mode.charAt(0).toUpperCase()+mode.slice(1));
-    if(!btn)return;
+  var modes={rect:'modeRect',ellipse:'modeEllipse',perspective:'modePers','ellipse-perspective':'modeEllipsePers'};
+  Object.keys(modes).forEach(function(mode){
+    var btn=document.getElementById(modes[mode]);if(!btn)return;
     var on=m===mode;
     btn.style.background=on?'#f5f0ff':'#fff';
     btn.style.borderColor=on?'#3b1f6e':'#eee';
@@ -1881,7 +1889,8 @@ function updModeButtons(){
   });
   document.getElementById('modebadge').textContent=
     m==='perspective'?'Mode Perspective \u2014 glisse les coins':
-    m==='ellipse'?'Mode Ellipse \u2014 glisse les bords':
+    m==='ellipse'?'Mode Ellipse':
+    m==='ellipse-perspective'?'Ellipse Perspective \u2014 glisse les coins':
     'S\u00e9lectionner (V)';
 }
 
@@ -2008,8 +2017,8 @@ function render(){
     var cx3=(pts[0].x+pts[1].x+pts[2].x+pts[3].x)/4;var cy4=(pts[0].y+pts[1].y+pts[2].y+pts[3].y)/4;
     ctx.save();ctx.beginPath();ctx.rect(panX,panY,cw,ch);ctx.clip();
 
-    if(z.mode==='ellipse'){
-      // Dessiner ellipse
+    if(z.mode==='ellipse'||z.mode==='ellipse-perspective'){
+      // Dessiner ellipse inscrite dans la bounding box
       ctx.beginPath();ctx.ellipse(sc.x+sw2/2,sc.y+sh2/2,sw2/2,sh2/2,0,0,Math.PI*2);
       ctx.fillStyle=color+(isAct?'30':'18');ctx.fill();
       ctx.strokeStyle=color;ctx.lineWidth=isAct?2:1.5;ctx.setLineDash(isAct?[]:[5,4]);ctx.stroke();ctx.setLineDash([]);
@@ -2023,7 +2032,7 @@ function render(){
     ctx.fillStyle=color;ctx.font='bold '+Math.max(10,Math.min(13,zoom*13))+'px Inter';ctx.textAlign='center';ctx.textBaseline='middle';
     ctx.fillText(z.name||(i+1+'. Zone'),cx3,cy4);
     if(isAct){
-      if(z.mode==='perspective'){
+      if(z.mode==='perspective'||z.mode==='ellipse-perspective'){
         pts.forEach(function(p,pi){
           ctx.fillStyle=pi===persHandle?color:'#fff';ctx.fillRect(p.x-HANDLE,p.y-HANDLE,HANDLE*2,HANDLE*2);
           ctx.strokeStyle=color;ctx.lineWidth=1.5;ctx.strokeRect(p.x-HANDLE,p.y-HANDLE,HANDLE*2,HANDLE*2);
@@ -2054,13 +2063,15 @@ function render(){
 }
 
 function hitPersCorner(mx,my){
-  if(activeIdx===null)return -1;var z=config.zones[activeIdx];if(!z||z.mode!=='perspective')return -1;
+  if(activeIdx===null)return -1;var z=config.zones[activeIdx];
+  if(!z||(z.mode!=='perspective'&&z.mode!=='ellipse-perspective'))return -1;
   for(var i=0;i<z.pts.length;i++){var p=i2c(z.pts[i].x,z.pts[i].y);if(Math.abs(mx-p.x)<HANDLE*1.5&&Math.abs(my-p.y)<HANDLE*1.5)return i;}
   return -1;
 }
 
 function hitRectHandle(mx,my){
-  if(activeIdx===null)return null;var z=config.zones[activeIdx];if(!z||z.mode==='perspective')return null;
+  if(activeIdx===null)return null;var z=config.zones[activeIdx];
+  if(!z||z.mode==='perspective'||z.mode==='ellipse-perspective')return null;
   var r=getZoneRect(z),sc=i2c(r.x,r.y),sw=r.w*zoom,sh=r.h*zoom;
   var hpts=[{x:sc.x,y:sc.y,id:'nw'},{x:sc.x+sw/2,y:sc.y,id:'n'},{x:sc.x+sw,y:sc.y,id:'ne'},{x:sc.x+sw,y:sc.y+sh/2,id:'e'},{x:sc.x+sw,y:sc.y+sh,id:'se'},{x:sc.x+sw/2,y:sc.y+sh,id:'s'},{x:sc.x,y:sc.y+sh,id:'sw'},{x:sc.x,y:sc.y+sh/2,id:'w'}];
   for(var i=0;i<hpts.length;i++){if(Math.abs(mx-hpts[i].x)<HANDLE&&Math.abs(my-hpts[i].y)<HANDLE)return hpts[i].id;}
@@ -2141,7 +2152,10 @@ document.addEventListener('mousemove',function(e){
     if(h.indexOf('e')>=0)nw=Math.max(5,o.w+dx3);if(h.indexOf('w')>=0){nx2=o.x+dx3;nw=Math.max(5,o.w-dx3);}
     if(h.indexOf('s')>=0)nh=Math.max(5,o.h+dy3);if(h.indexOf('n')>=0){ny2=o.y+dy3;nh=Math.max(5,o.h-dy3);}
     nw=snp(nw);nh=snp(nh);nx2=snp(nx2);ny2=snp(ny2);if(fs2){var sd=Math.max(nw,nh);nw=sd;nh=sd;}
-    setZoneRect(config.zones[activeIdx],nx2,ny2,nw,nh);updPropsInputs();render();showInfo(Math.round(nw)+'x'+Math.round(nh));return;
+    var savedMode=config.zones[activeIdx].mode;
+    setZoneRect(config.zones[activeIdx],nx2,ny2,nw,nh);
+    config.zones[activeIdx].mode=savedMode; // préserver le mode
+    updPropsInputs();render();showInfo(Math.round(nw)+'x'+Math.round(nh));return;
   }
   if(tool==='select'){
     var pc2=hitPersCorner(m.x,m.y);var rh2=hitRectHandle(m.x,m.y);
