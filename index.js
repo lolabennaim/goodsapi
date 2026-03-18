@@ -662,7 +662,7 @@ function onLogoReady(file,b64,imgEl){
   document.getElementById('loadingOverlay').style.display='none';
 
   // Auto-placer dans la première zone visible
-  if(Object.keys(selectedZones).length===0){
+  if(config&&config.zones&&Object.keys(selectedZones).length===0){
     var firstIdx=-1;
     for(var zi=0;zi<config.zones.length;zi++){
       if(!activeView||config.zones[zi].view===activeView){firstIdx=zi;break;}
