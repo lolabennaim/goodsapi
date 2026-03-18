@@ -572,6 +572,9 @@ function drawLogoWithPerspective(ctx,lg,pts,idx){
   if(idx===activeZoneIdx){
     var center=bilerp((u0+u1)/2,(v0+v1)/2);
     var brPt=bilerp(u1,v1);
+    // Stocker sur lg pour que bindCanvas puisse détecter le hit
+    lg._perspHandle=brPt;
+    lg._perspCenter=center;
     ctx.fillStyle='rgba(91,61,232,.85)';ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
     ctx.fillText('\u2725',center.x,center.y);
     ctx.fillStyle='#5b3de8';ctx.beginPath();ctx.arc(brPt.x,brPt.y,8,0,Math.PI*2);ctx.fill();
@@ -607,18 +610,36 @@ function bindCanvas(){
       var lidx=config.zones.indexOf(zv[i]);
       var lg=logos[lidx];
       if(!lg||lg.rx===undefined||lg.rw===undefined)continue;
-      var z=getZ(zv[i]);
-      var lx=z.zx+lg.rx*z.zw, ly=z.zy+lg.ry*z.zh;
-      var lw=lg.rw*z.zw, lh=lg.rh*z.zh;
-      if(Math.abs(p.x-(lx+lw))<HANDLE&&Math.abs(p.y-(ly+lh))<HANDLE){
-        activeZoneIdx=lidx;
-        resizing={idx:lidx,startX:p.x,startW:lw,aspect:lw/(lh||1),zw:z.zw,zh:z.zh};
-        renderCanvas();return;
-      }
-      if(p.x>=lx&&p.x<=lx+lw&&p.y>=ly&&p.y<=ly+lh){
-        activeZoneIdx=lidx;
-        dragging={idx:lidx,offX:p.x-lx,offY:p.y-ly,zx:z.zx,zy:z.zy,zw:z.zw,zh:z.zh,lw:lw,lh:lh};
-        renderCanvas();return;
+      var isPers=zv[i].mode==='perspective';
+
+      if(isPers){
+        // Mode perspective : utiliser les coordonnées stockées par drawLogoWithPerspective
+        var handle=lg._perspHandle;
+        var center=lg._perspCenter;
+        if(handle&&Math.abs(p.x-handle.x)<HANDLE*1.5&&Math.abs(p.y-handle.y)<HANDLE*1.5){
+          activeZoneIdx=lidx;
+          resizing={idx:lidx,startX:p.x,startY:p.y,startRw:lg.rw,startRh:lg.rh,isPers:true};
+          renderCanvas();return;
+        }
+        if(center&&Math.abs(p.x-center.x)<30&&Math.abs(p.y-center.y)<30){
+          activeZoneIdx=lidx;
+          dragging={idx:lidx,startX:p.x,startY:p.y,startRx:lg.rx,startRy:lg.ry,isPers:true};
+          renderCanvas();return;
+        }
+      } else {
+        var z=getZ(zv[i]);
+        var lx=z.zx+lg.rx*z.zw, ly=z.zy+lg.ry*z.zh;
+        var lw=lg.rw*z.zw, lh=lg.rh*z.zh;
+        if(Math.abs(p.x-(lx+lw))<HANDLE&&Math.abs(p.y-(ly+lh))<HANDLE){
+          activeZoneIdx=lidx;
+          resizing={idx:lidx,startX:p.x,startW:lw,aspect:lw/(lh||1),zw:z.zw,zh:z.zh};
+          renderCanvas();return;
+        }
+        if(p.x>=lx&&p.x<=lx+lw&&p.y>=ly&&p.y<=ly+lh){
+          activeZoneIdx=lidx;
+          dragging={idx:lidx,offX:p.x-lx,offY:p.y-ly,zx:z.zx,zy:z.zy,zw:z.zw,zh:z.zh,lw:lw,lh:lh};
+          renderCanvas();return;
+        }
       }
     }
   }
@@ -629,17 +650,34 @@ function bindCanvas(){
     var p=pt(e);
     if(dragging){
       var lg=logos[dragging.idx];
-      var nx=Math.max(dragging.zx,Math.min(dragging.zx+dragging.zw-dragging.lw,p.x-dragging.offX));
-      var ny=Math.max(dragging.zy,Math.min(dragging.zy+dragging.zh-dragging.lh,p.y-dragging.offY));
-      lg.rx=(nx-dragging.zx)/dragging.zw;
-      lg.ry=(ny-dragging.zy)/dragging.zh;
+      if(dragging.isPers){
+        // Perspective : déplacer en delta relatif
+        var dx=(p.x-dragging.startX)/200;
+        var dy=(p.y-dragging.startY)/200;
+        lg.rx=Math.max(0,Math.min(1-lg.rw,dragging.startRx+dx));
+        lg.ry=Math.max(0,Math.min(1-lg.rh,dragging.startRy+dy));
+      } else {
+        var nx=Math.max(dragging.zx,Math.min(dragging.zx+dragging.zw-dragging.lw,p.x-dragging.offX));
+        var ny=Math.max(dragging.zy,Math.min(dragging.zy+dragging.zh-dragging.lh,p.y-dragging.offY));
+        lg.rx=(nx-dragging.zx)/dragging.zw;
+        lg.ry=(ny-dragging.zy)/dragging.zh;
+      }
       renderCanvas();return;
     }
     if(resizing){
       var lg=logos[resizing.idx];
-      var nw=Math.max(8,Math.min(resizing.zw,resizing.startW+(p.x-resizing.startX)));
-      lg.rw=nw/resizing.zw;
-      lg.rh=(nw/resizing.aspect)/resizing.zh;
+      if(resizing.isPers){
+        // Perspective : resize en delta relatif
+        var delta=(p.x-resizing.startX)/200;
+        lg.rw=Math.max(0.05,Math.min(1,resizing.startRw+delta));
+        lg.rh=Math.max(0.05,Math.min(1,resizing.startRh+delta));
+        lg.rx=Math.max(0,(1-lg.rw)/2);
+        lg.ry=Math.max(0,(1-lg.rh)/2);
+      } else {
+        var nw=Math.max(8,Math.min(resizing.zw,resizing.startW+(p.x-resizing.startX)));
+        lg.rw=nw/resizing.zw;
+        lg.rh=(nw/resizing.aspect)/resizing.zh;
+      }
       renderCanvas();return;
     }
   }
