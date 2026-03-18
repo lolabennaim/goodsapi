@@ -458,7 +458,6 @@ function renderCanvas(){
 
     if(hasLogo){
       var lg=logos[idx];
-      // Initialiser position si pas encore fait
       if(lg.rw===undefined){
         if(lg.imgEl.complete&&lg.imgEl.naturalWidth>0){
           initLogoPos(idx,zx,zy,zw,zh);
@@ -468,25 +467,28 @@ function renderCanvas(){
         }
       }
       if(lg.rw===undefined)return;
-      // Calculer position absolue sur le canvas
       var lx=zx+lg.rx*zw;
       var ly=zy+lg.ry*zh;
       var lw=lg.rw*zw;
       var lh=lg.rh*zh;
-      // Sauvegarder pour drag/resize
       lg.x=lx;lg.y=ly;lg.w=lw;lg.h=lh;
       lg._zx=zx;lg._zy=zy;lg._zw=zw;lg._zh=zh;
-      // Dessiner sans clip pour garantir la visibilité
       ctx.save();
-      ctx.drawImage(lg.imgEl,lx,ly,lw,lh);
-      if(idx===activeZoneIdx){
-        ctx.strokeStyle='#5b3de8';ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
-        ctx.strokeRect(lx,ly,lw,lh);ctx.setLineDash([]);
-        ctx.fillStyle='rgba(91,61,232,.08)';ctx.fillRect(lx,ly,lw,lh);
-        ctx.fillStyle='rgba(91,61,232,.85)';ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillText('\u2725',lx+lw/2,ly+lh/2);
-        ctx.fillStyle='#5b3de8';ctx.beginPath();ctx.roundRect(lx+lw-HANDLE/2,ly+lh-HANDLE/2,HANDLE,HANDLE,3);ctx.fill();
-        ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('\u2921',lx+lw,ly+lh);
+      // Mode perspective : déformer le logo selon les 4 coins de la zone
+      if(zone.mode==='perspective'&&zone.pts&&zone.pts.length===4){
+        var pts=zone.pts.map(function(p){return{x:p.x*scale,y:p.y*scale};});
+        drawLogoWithPerspective(ctx,lg,pts,idx);
+      } else {
+        ctx.drawImage(lg.imgEl,lx,ly,lw,lh);
+        if(idx===activeZoneIdx){
+          ctx.strokeStyle='#5b3de8';ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
+          ctx.strokeRect(lx,ly,lw,lh);ctx.setLineDash([]);
+          ctx.fillStyle='rgba(91,61,232,.08)';ctx.fillRect(lx,ly,lw,lh);
+          ctx.fillStyle='rgba(91,61,232,.85)';ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+          ctx.fillText('\u2725',lx+lw/2,ly+lh/2);
+          ctx.fillStyle='#5b3de8';ctx.beginPath();ctx.roundRect(lx+lw-HANDLE/2,ly+lh-HANDLE/2,HANDLE,HANDLE,3);ctx.fill();
+          ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('\u2921',lx+lw,ly+lh);
+        }
       }
       ctx.restore();
     }
@@ -517,9 +519,62 @@ function initLogoPos(idx,zx,zy,zw,zh){
   ph=Math.max(10,Math.min(ph,zh));
   lg.rw=pw/zw; lg.rh=ph/zh;
   lg.rx=(1-lg.rw)/2; lg.ry=(1-lg.rh)/2;
-  // Log visible
   var st=document.getElementById('bgRemoveStatus');
   if(st) st.textContent='Zone: '+Math.round(zw)+'x'+Math.round(zh)+'px | Logo: '+Math.round(pw)+'x'+Math.round(ph)+'px';
+}
+
+// Rendu du logo avec déformation perspective (subdivision bilinéaire)
+function drawLogoWithPerspective(ctx,lg,pts,idx){
+  var p0=pts[0],p1=pts[1],p2=pts[2],p3=pts[3];
+  var imgW=lg.imgEl.naturalWidth, imgH=lg.imgEl.naturalHeight;
+  // Interpolation bilinéaire : u,v [0-1] -> coordonnée écran dans le quadrilatère
+  function bilerp(u,v){
+    return{
+      x:(1-u)*(1-v)*p0.x + u*(1-v)*p1.x + u*v*p2.x + (1-u)*v*p3.x,
+      y:(1-u)*(1-v)*p0.y + u*(1-v)*p1.y + u*v*p2.y + (1-u)*v*p3.y
+    };
+  }
+  // Zone du logo dans l'espace [0-1] de la zone de marquage
+  var u0=lg.rx, u1=lg.rx+lg.rw;
+  var v0=lg.ry, v1=lg.ry+lg.rh;
+  u0=Math.max(0,Math.min(1,u0)); u1=Math.max(0,Math.min(1,u1));
+  v0=Math.max(0,Math.min(1,v0)); v1=Math.max(0,Math.min(1,v1));
+  var steps=20; // subdivision - plus c'est grand plus c'est précis
+  // Clip sur le polygone de la zone
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(p0.x,p0.y);ctx.lineTo(p1.x,p1.y);ctx.lineTo(p2.x,p2.y);ctx.lineTo(p3.x,p3.y);
+  ctx.closePath();ctx.clip();
+  for(var j=0;j<steps;j++){
+    for(var i=0;i<steps;i++){
+      var su0=u0+(u1-u0)*i/steps, su1=u0+(u1-u0)*(i+1)/steps;
+      var sv0=v0+(v1-v0)*j/steps, sv1=v0+(v1-v0)*(j+1)/steps;
+      var tl=bilerp(su0,sv0), tr=bilerp(su1,sv0);
+      var bl=bilerp(su0,sv1), br=bilerp(su1,sv1);
+      // Source dans l'image originale
+      var sx=((su0-u0)/(u1-u0||1))*imgW;
+      var sy=((sv0-v0)/(v1-v0||1))*imgH;
+      var sw=imgW/steps, sh=imgH/steps;
+      var destW=Math.max(1,Math.sqrt(Math.pow(tr.x-tl.x,2)+Math.pow(tr.y-tl.y,2)));
+      var destH=Math.max(1,Math.sqrt(Math.pow(bl.x-tl.x,2)+Math.pow(bl.y-tl.y,2)));
+      var dx=tr.x-tl.x, dy=tr.y-tl.y;
+      var ex=bl.x-tl.x, ey=bl.y-tl.y;
+      ctx.save();
+      ctx.transform(dx/Math.max(sw,1),dy/Math.max(sw,1),ex/Math.max(sh,1),ey/Math.max(sh,1),tl.x,tl.y);
+      ctx.drawImage(lg.imgEl,sx,sy,sw,sh,0,0,sw,sh);
+      ctx.restore();
+    }
+  }
+  // Poignées si zone active
+  if(idx===activeZoneIdx){
+    var center=bilerp((u0+u1)/2,(v0+v1)/2);
+    var brPt=bilerp(u1,v1);
+    ctx.fillStyle='rgba(91,61,232,.85)';ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('\u2725',center.x,center.y);
+    ctx.fillStyle='#5b3de8';ctx.beginPath();ctx.arc(brPt.x,brPt.y,8,0,Math.PI*2);ctx.fill();
+    ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('\u2921',brPt.x,brPt.y);
+  }
+  ctx.restore();
 }
 
 // ── BIND CANVAS ──────────────────────────────────────────────────────────────
