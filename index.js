@@ -198,7 +198,7 @@ body{font-family:'Inter',sans-serif;background:#fff;color:#1a1a1a;font-size:14px
       </div>
       <div class="step-body open" id="sbody1">
         <div class="upload-drop" id="uploadDrop">
-          <input type="file" accept=".pdf,.ai,application/pdf" id="logoInput" onchange="onLogoUpload(this)">
+          <input type="file" accept=".pdf,.ai,application/pdf" id="logoInput" onchange="onLogoUpload(this)" style="font-size:0">
           <div class="up-icon" id="upIcon">\uD83D\uDCC1</div>
           <div class="up-title" id="upTitle">Clique pour uploader ton logo</div>
           <div class="up-sub">PDF ou AI vectoris\u00e9 uniquement</div>
@@ -600,9 +600,13 @@ function onLogoUpload(input){
   var r=new FileReader();
   r.onload=function(e){
     var b64=e.target.result;input.value='';
-    if(isAI){onLogoReady(file,b64,makePlaceholder('AI'));return;}
+    function readyOrWait(ph){
+      if(ph.complete&&ph.naturalWidth>0){onLogoReady(file,b64,ph);}
+      else{ph.onload=function(){onLogoReady(file,b64,ph);};}
+    }
+    if(isAI){readyOrWait(makePlaceholder('AI'));return;}
     if(window.pdfjsLib&&window.pdfjsLib.getDocument){doRenderPDF(file,b64);}
-    else onLogoReady(file,b64,makePlaceholder('PDF'));
+    else readyOrWait(makePlaceholder('PDF'));
   };
   r.readAsDataURL(file);
 }
@@ -619,7 +623,11 @@ function doRenderPDF(file,b64){
       return page.render({canvasContext:oc.getContext('2d'),viewport:vp}).promise.then(function(){return oc.toDataURL('image/png');});
     })
     .then(function(dataURL){var im=new Image();im.onload=function(){onLogoReady(file,b64,im);};im.src=dataURL;})
-    .catch(function(){onLogoReady(file,b64,makePlaceholder('PDF'));});
+    .catch(function(){
+      var ph=makePlaceholder('PDF');
+      if(ph.complete&&ph.naturalWidth>0){onLogoReady(file,b64,ph);}
+      else{ph.onload=function(){onLogoReady(file,b64,ph);};}
+    });
 }
 
 function onLogoReady(file,b64,imgEl){
@@ -643,7 +651,7 @@ function onLogoReady(file,b64,imgEl){
       selectedZones[firstIdx]=true;
       activeZoneIdx=firstIdx;
       applyLogoToZone(firstIdx);
-      // Calculer la position imm\u00e9diatement (scale est d\u00e9j\u00e0 connu apr\u00e8s sizeCanvas)
+      sizeCanvas(); // garantit que scale est calculé avant getZoneCanvasRect
       var r=getZoneCanvasRect(firstIdx);
       if(r) initLogoPos(firstIdx, r.zx, r.zy, r.zw, r.zh);
     }
