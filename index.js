@@ -450,7 +450,12 @@ function renderCanvas(){
 
     if(isSel&&!hasLogo){
       ctx.save();
-      ctx.beginPath();ctx.rect(zx,zy,zw,zh);
+      ctx.beginPath();
+      if(zone.mode==='ellipse'){
+        ctx.ellipse(zx+zw/2,zy+zh/2,zw/2,zh/2,0,0,Math.PI*2);
+      } else {
+        ctx.rect(zx,zy,zw,zh);
+      }
       ctx.fillStyle='rgba(91,61,232,.1)';ctx.fill();
       ctx.strokeStyle='rgba(91,61,232,.6)';ctx.lineWidth=2;ctx.setLineDash([5,4]);ctx.stroke();ctx.setLineDash([]);
       ctx.restore();
@@ -474,10 +479,22 @@ function renderCanvas(){
       lg.x=lx;lg.y=ly;lg.w=lw;lg.h=lh;
       lg._zx=zx;lg._zy=zy;lg._zw=zw;lg._zh=zh;
       ctx.save();
-      // Mode perspective : déformer le logo selon les 4 coins de la zone
       if(zone.mode==='perspective'&&zone.pts&&zone.pts.length===4){
         var pts=zone.pts.map(function(p){return{x:p.x*scale,y:p.y*scale};});
         drawLogoWithPerspective(ctx,lg,pts,idx);
+      } else if(zone.mode==='ellipse'){
+        // Clip ellipse + dessiner logo
+        ctx.beginPath();ctx.ellipse(zx+zw/2,zy+zh/2,zw/2,zh/2,0,0,Math.PI*2);ctx.clip();
+        ctx.drawImage(lg.imgEl,lx,ly,lw,lh);
+        if(idx===activeZoneIdx){
+          ctx.strokeStyle='#5b3de8';ctx.lineWidth=1.5;ctx.setLineDash([5,4]);
+          ctx.strokeRect(lx,ly,lw,lh);ctx.setLineDash([]);
+          ctx.fillStyle='rgba(91,61,232,.08)';ctx.fillRect(lx,ly,lw,lh);
+          ctx.fillStyle='rgba(91,61,232,.85)';ctx.font='bold 15px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+          ctx.fillText('\u2725',lx+lw/2,ly+lh/2);
+          ctx.fillStyle='#5b3de8';ctx.beginPath();ctx.roundRect(lx+lw-HANDLE/2,ly+lh-HANDLE/2,HANDLE,HANDLE,3);ctx.fill();
+          ctx.fillStyle='#fff';ctx.font='bold 10px sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';ctx.fillText('\u2921',lx+lw,ly+lh);
+        }
       } else {
         ctx.drawImage(lg.imgEl,lx,ly,lw,lh);
         if(idx===activeZoneIdx){
@@ -1663,6 +1680,7 @@ body{font-family:'Inter',sans-serif;background:#111;color:#1a1a1a;min-height:100
         <div class="sec">Mode zone</div>
         <div style="display:flex;gap:6px;margin-bottom:8px">
           <button id="modeRect" onclick="setZoneMode('rect')" style="flex:1;padding:6px;border-radius:6px;border:1.5px solid #3b1f6e;background:#f5f0ff;color:#3b1f6e;font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">Rectangle</button>
+          <button id="modeEllipse" onclick="setZoneMode('ellipse')" style="flex:1;padding:6px;border-radius:6px;border:1.5px solid #eee;background:#fff;color:#555;font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">Ellipse</button>
           <button id="modePers" onclick="setZoneMode('perspective')" style="flex:1;padding:6px;border-radius:6px;border:1.5px solid #eee;background:#fff;color:#555;font-size:11px;font-weight:600;cursor:pointer;font-family:Inter,sans-serif">Perspective</button>
         </div>
         <div class="sec">Position exacte</div>
@@ -1853,13 +1871,18 @@ function setZoneMode(mode){
 function updModeButtons(){
   if(activeIdx===null)return;
   var m=(config.zones[activeIdx].mode)||'rect';
-  document.getElementById('modeRect').style.background=m==='rect'?'#f5f0ff':'#fff';
-  document.getElementById('modeRect').style.borderColor=m==='rect'?'#3b1f6e':'#eee';
-  document.getElementById('modeRect').style.color=m==='rect'?'#3b1f6e':'#555';
-  document.getElementById('modePers').style.background=m==='perspective'?'#f5f0ff':'#fff';
-  document.getElementById('modePers').style.borderColor=m==='perspective'?'#3b1f6e':'#eee';
-  document.getElementById('modePers').style.color=m==='perspective'?'#3b1f6e':'#555';
-  document.getElementById('modebadge').textContent=m==='perspective'?'Mode Perspective \u2014 glisse les coins':'S\u00e9lectionner (V)';
+  ['rect','ellipse','perspective'].forEach(function(mode){
+    var btn=document.getElementById('mode'+mode.charAt(0).toUpperCase()+mode.slice(1));
+    if(!btn)return;
+    var on=m===mode;
+    btn.style.background=on?'#f5f0ff':'#fff';
+    btn.style.borderColor=on?'#3b1f6e':'#eee';
+    btn.style.color=on?'#3b1f6e':'#555';
+  });
+  document.getElementById('modebadge').textContent=
+    m==='perspective'?'Mode Perspective \u2014 glisse les coins':
+    m==='ellipse'?'Mode Ellipse \u2014 glisse les bords':
+    'S\u00e9lectionner (V)';
 }
 
 function buildZoneList(){
@@ -1869,7 +1892,7 @@ function buildZoneList(){
     var d=document.createElement('div');d.className='zone-row'+(i===activeIdx?' on':'');
     d.innerHTML='<div class="zdot" style="background:'+COLORS[i%COLORS.length]+'"></div>'
       +'<div class="zinfo"><div class="zn">'+(z.name||'Zone '+(i+1))+'</div>'
-      +'<div class="zs">'+(z.mode==='perspective'?'Perspective':'Rectangle')+' \u00b7 '+(z.maxMm||80)+'mm</div></div>'
+      +'<div class="zs">'+(z.mode==='perspective'?'Perspective':z.mode==='ellipse'?'Ellipse':'Rectangle')+' \u00b7 '+(z.maxMm||80)+'mm</div></div>'
       +'<button class="zdel" onclick="delZoneAt('+i+',event)">x</button>';
     d.onclick=function(){activeIdx=i;buildZoneList();updPropsPanel();render();showSTab('props');};
     el.appendChild(d);
@@ -1981,12 +2004,22 @@ function render(){
     if(z.view!==activeView||!z.pts||z.pts.length<4)return;
     var color=COLORS[i%COLORS.length];var isAct=i===activeIdx;
     var pts=z.pts.map(function(p){return i2c(p.x,p.y);});
-    ctx.save();ctx.beginPath();ctx.rect(panX,panY,cw,ch);ctx.clip();
-    ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);for(var k=1;k<pts.length;k++)ctx.lineTo(pts[k].x,pts[k].y);ctx.closePath();
-    ctx.fillStyle=color+(isAct?'30':'18');ctx.fill();
-    ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);for(var k2=1;k2<pts.length;k2++)ctx.lineTo(pts[k2].x,pts[k2].y);ctx.closePath();
-    ctx.strokeStyle=color;ctx.lineWidth=isAct?2:1.5;ctx.setLineDash(isAct?[]:[5,4]);ctx.stroke();ctx.setLineDash([]);
+    var r2=getZoneRect(z);var sc=i2c(r2.x,r2.y);var sw2=r2.w*zoom,sh2=r2.h*zoom;
     var cx3=(pts[0].x+pts[1].x+pts[2].x+pts[3].x)/4;var cy4=(pts[0].y+pts[1].y+pts[2].y+pts[3].y)/4;
+    ctx.save();ctx.beginPath();ctx.rect(panX,panY,cw,ch);ctx.clip();
+
+    if(z.mode==='ellipse'){
+      // Dessiner ellipse
+      ctx.beginPath();ctx.ellipse(sc.x+sw2/2,sc.y+sh2/2,sw2/2,sh2/2,0,0,Math.PI*2);
+      ctx.fillStyle=color+(isAct?'30':'18');ctx.fill();
+      ctx.strokeStyle=color;ctx.lineWidth=isAct?2:1.5;ctx.setLineDash(isAct?[]:[5,4]);ctx.stroke();ctx.setLineDash([]);
+    } else {
+      ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);for(var k=1;k<pts.length;k++)ctx.lineTo(pts[k].x,pts[k].y);ctx.closePath();
+      ctx.fillStyle=color+(isAct?'30':'18');ctx.fill();
+      ctx.beginPath();ctx.moveTo(pts[0].x,pts[0].y);for(var k2=1;k2<pts.length;k2++)ctx.lineTo(pts[k2].x,pts[k2].y);ctx.closePath();
+      ctx.strokeStyle=color;ctx.lineWidth=isAct?2:1.5;ctx.setLineDash(isAct?[]:[5,4]);ctx.stroke();ctx.setLineDash([]);
+    }
+
     ctx.fillStyle=color;ctx.font='bold '+Math.max(10,Math.min(13,zoom*13))+'px Inter';ctx.textAlign='center';ctx.textBaseline='middle';
     ctx.fillText(z.name||(i+1+'. Zone'),cx3,cy4);
     if(isAct){
@@ -1996,7 +2029,6 @@ function render(){
           ctx.strokeStyle=color;ctx.lineWidth=1.5;ctx.strokeRect(p.x-HANDLE,p.y-HANDLE,HANDLE*2,HANDLE*2);
         });
       } else {
-        var r2=getZoneRect(z);var sc=i2c(r2.x,r2.y);var sw2=r2.w*zoom,sh2=r2.h*zoom;
         var hpts=[{x:sc.x,y:sc.y},{x:sc.x+sw2/2,y:sc.y},{x:sc.x+sw2,y:sc.y},{x:sc.x+sw2,y:sc.y+sh2/2},{x:sc.x+sw2,y:sc.y+sh2},{x:sc.x+sw2/2,y:sc.y+sh2},{x:sc.x,y:sc.y+sh2},{x:sc.x,y:sc.y+sh2/2}];
         hpts.forEach(function(h){ctx.fillStyle='#fff';ctx.fillRect(h.x-HANDLE/2,h.y-HANDLE/2,HANDLE,HANDLE);ctx.strokeStyle=color;ctx.lineWidth=1.5;ctx.strokeRect(h.x-HANDLE/2,h.y-HANDLE/2,HANDLE,HANDLE);});
       }
@@ -2156,6 +2188,7 @@ function setTool(t){
   var mb=document.getElementById('modebadge');
   if(t==='draw')mb.textContent='Dessiner (glisse + Shift=carr\u00e9)';
   else if(activeIdx!==null&&config.zones[activeIdx]&&config.zones[activeIdx].mode==='perspective')mb.textContent='Mode Perspective \u2014 glisse les coins';
+  else if(activeIdx!==null&&config.zones[activeIdx]&&config.zones[activeIdx].mode==='ellipse')mb.textContent='Mode Ellipse \u2014 glisse les bords';
   else mb.textContent='S\u00e9lectionner (V)';
 }
 
