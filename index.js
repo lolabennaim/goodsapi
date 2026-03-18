@@ -30,7 +30,7 @@ async function init() {
   await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS margin NUMERIC DEFAULT 2.7`).catch(()=>{});
   await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS taux_marquage NUMERIC DEFAULT 0`).catch(()=>{});
   await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS forfait_min NUMERIC DEFAULT 40`).catch(()=>{});
-  await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS cliche NUMERIC DEFAULT 30`).catch(()=>{});
+  await pool.query(`ALTER TABLE products ADD COLUMN IF NOT EXISTS paliers JSONB DEFAULT '[]'`).catch(()=>{});
   console.log('DB prete');
 }
 
@@ -290,7 +290,7 @@ body{font-family:'Inter',sans-serif;background:#fff;color:#1a1a1a;font-size:14px
 var API_URL='https://goodsapi-production.up.railway.app';
 var MARGIN=2.7;
 var PRIX_ACHAT=0;
-var TAUX_MARQUAGE=0;
+var PALIERS=[]; // [{min:0,taux:0}] — dégressif par quantité
 var FORFAIT_MIN=40;
 var CLICHE=30;
 var config=null;
@@ -333,7 +333,7 @@ async function init(){
     var res=await fetch(API_URL+'/products/'+sku);
     if(!res.ok)throw 0;
     var d=await res.json();config=d.config;MARGIN=parseFloat(d.margin)||2.7;PRIX_ACHAT=parseFloat(d.prix_achat)||0;
-    TAUX_MARQUAGE=parseFloat(d.taux_marquage)||0;
+    PALIERS=d.paliers&&d.paliers.length ? d.paliers : (d.taux_marquage ? [{min:0,taux:parseFloat(d.taux_marquage)}] : []);
     FORFAIT_MIN=parseFloat(d.forfait_min)||40;
     CLICHE=parseFloat(d.cliche)||30;
     setup();
@@ -1057,17 +1057,30 @@ function setQty(n){
   markStepDone(4,qty+' unit\u00e9s');updatePrix();
 }
 
+// Retourne le taux unitaire de marquage selon la quantité (paliers dégressifs)
+function getTauxMarquage(q){
+  if(!PALIERS||!PALIERS.length)return 0;
+  // Trier par min décroissant, prendre le premier palier dont min <= q
+  var sorted=PALIERS.slice().sort(function(a,b){return b.min-a.min;});
+  for(var i=0;i<sorted.length;i++){
+    if(q>=sorted[i].min)return parseFloat(sorted[i].taux)||0;
+  }
+  return parseFloat(PALIERS[0].taux)||0;
+}
+
 // ── PRIX ─────────────────────────────────────────────────────────────────────
 function updatePrix(){
   var pBase=PRIX_ACHAT||0;
   var nZ=Math.max(1,Object.keys(selectedZones).length);
-  var marquageParZone=Math.max(FORFAIT_MIN, TAUX_MARQUAGE*qty);
+  var taux=getTauxMarquage(qty);
+  var marquageParZone=Math.max(FORFAIT_MIN, taux*qty);
   var totalMakito=pBase*qty + (marquageParZone+CLICHE)*nZ;
   var prixUnitaireMakito=totalMakito/qty;
-  var total=pBase>0&&TAUX_MARQUAGE>0 ? prixUnitaireMakito*MARGIN : null;
+  var hasTarif=pBase>0&&PALIERS.length>0;
+  var total=hasTarif ? prixUnitaireMakito*MARGIN : null;
 
   document.getElementById('pProduit').textContent=pBase>0?fmt(pBase*qty)+' \u20ac':'\u2014';
-  document.getElementById('pMarquage').textContent=TAUX_MARQUAGE>0?fmt(marquageParZone*nZ)+' \u20ac':'\u2014';
+  document.getElementById('pMarquage').textContent=hasTarif?fmt(marquageParZone*nZ)+' \u20ac':'\u2014';
   document.getElementById('pCliche').textContent=fmt(CLICHE*nZ)+' \u20ac';
   document.getElementById('pTotal').textContent=total?fmt(total)+' \u20ac/u':'\u2014';
 }
@@ -1155,11 +1168,11 @@ app.get('/makito-test/:sku', async (req, res) => {
 
 app.post('/products', async (req, res) => {
   try {
-    const { sku, name, config, margin, prix_achat, taux_marquage, forfait_min, cliche } = req.body;
+    const { sku, name, config, margin, prix_achat, taux_marquage, forfait_min, cliche, paliers } = req.body;
     if (!sku) return res.status(400).json({ error: 'SKU manquant' });
     await pool.query(`
-      INSERT INTO products (sku, name, config, margin, prix_achat, taux_marquage, forfait_min, cliche, updated_at)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+      INSERT INTO products (sku, name, config, margin, prix_achat, taux_marquage, forfait_min, cliche, paliers, updated_at)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
       ON CONFLICT (sku) DO UPDATE SET
         name = EXCLUDED.name,
         config = EXCLUDED.config,
@@ -1168,8 +1181,9 @@ app.post('/products', async (req, res) => {
         taux_marquage = EXCLUDED.taux_marquage,
         forfait_min = EXCLUDED.forfait_min,
         cliche = EXCLUDED.cliche,
+        paliers = EXCLUDED.paliers,
         updated_at = NOW()
-    `, [sku, name || '', config || {}, margin || 2.7, prix_achat || 0, taux_marquage || 0, forfait_min || 40, cliche || 30]);
+    `, [sku, name || '', config || {}, margin || 2.7, prix_achat || 0, taux_marquage || 0, forfait_min || 40, cliche || 30, JSON.stringify(paliers || [])]);
     res.json({ ok: true, sku });
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -1392,10 +1406,13 @@ body{font-family:'DM Sans',sans-serif;background:#f8f7f5;color:#1a1a1a;min-heigh
       <div class="tarif-block">
         <div class="tarif-title">Tarification Makito</div>
         <div class="form-row-4">
-          <div class="fld"><label>Prix achat (\u20ac/u)</label><input id="fPrix" type="number" step="0.001" placeholder="1.200" oninput="updatePreview()"/></div>
-          <div class="fld"><label>Taux marquage (\u20ac/u)</label><input id="fTaux" type="number" step="0.001" placeholder="0.560" oninput="updatePreview()"/></div>
-          <div class="fld"><label>Forfait min marquage (\u20ac)</label><input id="fForfait" type="number" step="1" placeholder="45" oninput="updatePreview()"/></div>
-          <div class="fld"><label>Clich\u00e9 par zone (\u20ac)</label><input id="fCliche" type="number" step="1" placeholder="30" value="30" oninput="updatePreview()"/></div>
+          <div class="fld"><label>Prix achat (\u20ac/u)</label><input id="fPrix" type="number" step="0.001" placeholder="0.520" oninput="updatePreview()"/></div>
+          <div class="fld"><label>Taux marquage (\u20ac/u)</label><input id="fTaux" type="number" step="0.001" placeholder="0.400" oninput="updatePreview()"/></div>
+          <div class="fld"><label>Forfait min (\u20ac)</label><input id="fForfait" type="number" step="1" value="40" oninput="updatePreview()"/></div>
+          <div class="fld"><label>Clich\u00e9/zone (\u20ac)</label><input id="fCliche" type="number" step="1" value="30" oninput="updatePreview()"/></div>
+        </div>
+        <div style="font-size:11px;color:#aaa;margin-top:-6px;margin-bottom:8px">
+          Marquage = MAX(forfait_min, taux \u00d7 qt\u00e9) — le forfait s\u2019applique jusqu\u2019\u00e0 <span id="seuilInfo">—</span> unit\u00e9s
         </div>
       </div>
       <div class="preview-box" id="previewBox"></div>
@@ -1411,9 +1428,10 @@ body{font-family:'DM Sans',sans-serif;background:#f8f7f5;color:#1a1a1a;min-heigh
       </tr></thead>
       <tbody>
         ${rows.map(r => {
-          const pa=parseFloat(r.prix_achat)||0,tm=parseFloat(r.taux_marquage)||0;
+          const pa=parseFloat(r.prix_achat)||0;
+          const tm=parseFloat(r.taux_marquage)||0;
           const fm=parseFloat(r.forfait_min)||40,cl=parseFloat(r.cliche)||30,m=parseFloat(r.margin)||2.7;
-          const q=100,mk=Math.max(fm,tm*q);
+          const q=100, mk=Math.max(fm,tm*q);
           const pv=pa>0&&tm>0?(((pa*q+mk+cl)/q)*m).toFixed(2):null;
           return `<tr>
             <td><span class="sku-pill">${r.sku}</span></td>
@@ -1437,9 +1455,29 @@ body{font-family:'DM Sans',sans-serif;background:#f8f7f5;color:#1a1a1a;min-heigh
 <div class="toast" id="toast"></div>
 <script>
 function toast(msg,ok){ok=ok!==false;var t=document.getElementById('toast');t.textContent=msg;t.style.background=ok?'#1a1a1a':'#dc2626';t.style.display='block';setTimeout(function(){t.style.display='none';},2500);}
+
+function updatePreview(){
+  var pa=parseFloat(document.getElementById('fPrix').value)||0;
+  var tm=parseFloat(document.getElementById('fTaux').value)||0;
+  var fm=parseFloat(document.getElementById('fForfait').value)||40;
+  var cl=parseFloat(document.getElementById('fCliche').value)||30;
+  var m=parseFloat(document.getElementById('fMargin').value)||2.7;
+  // Seuil de bascule
+  var seuil=tm>0?Math.ceil(fm/tm):0;
+  var seuilEl=document.getElementById('seuilInfo');
+  if(seuilEl)seuilEl.textContent=seuil>0?seuil+' u':'—';
+  var box=document.getElementById('previewBox');
+  if(pa>0&&tm>0){
+    function calc(q){return(((pa*q+Math.max(fm,tm*q)+cl)/q)*m).toFixed(2);}
+    box.style.display='block';
+    box.textContent='Prix client : '+calc(50)+' \u20ac/u (\u00d750)  \u00b7  '+calc(100)+' \u20ac/u (\u00d7100)  \u00b7  '+calc(250)+' \u20ac/u (\u00d7250)  \u00b7  '+calc(500)+' \u20ac/u (\u00d7500)';
+  }else{box.style.display='none';}
+}
+
 async function fetchVariants(){
   var sku=document.getElementById('fSku').value.trim();if(!sku)return;
-  try{var r=await fetch('/shopify-variants/'+sku);if(!r.ok)return;var d=await r.json();
+  try{
+    var r=await fetch('/shopify-variants/'+sku);if(!r.ok)return;var d=await r.json();
     if(!d.variants||!d.variants.length)return;
     var sel=document.getElementById('fVariant');sel.innerHTML='<option value="">Selectionnez une variante...</option>';
     d.variants.forEach(function(v){var opt=document.createElement('option');opt.value=v.price;opt.textContent=v.title+' \u2014 '+v.price+' \u20ac';sel.appendChild(opt);});
@@ -1448,20 +1486,12 @@ async function fetchVariants(){
     if(d.maxPrice>0){sel.value=d.maxPrice;document.getElementById('fPrix').value=d.maxPrice;updatePreview();}
   }catch(e){}
 }
-function onVariantChange(){var p=parseFloat(document.getElementById('fVariant').value)||0;if(p>0){document.getElementById('fPrix').value=p;updatePreview();}}
-function updatePreview(){
-  var pa=parseFloat(document.getElementById('fPrix').value)||0;
-  var tm=parseFloat(document.getElementById('fTaux').value)||0;
-  var fm=parseFloat(document.getElementById('fForfait').value)||40;
-  var cl=parseFloat(document.getElementById('fCliche').value)||30;
-  var m=parseFloat(document.getElementById('fMargin').value)||2.7;
-  var box=document.getElementById('previewBox');
-  if(pa>0&&tm>0){
-    function calc(q){return(((pa*q+Math.max(fm,tm*q)+cl)/q)*m).toFixed(2);}
-    box.style.display='block';
-    box.textContent='Prix client : '+calc(50)+' \u20ac/u (\u00d750)  \u00b7  '+calc(100)+' \u20ac/u (\u00d7100)  \u00b7  '+calc(250)+' \u20ac/u (\u00d7250)  \u00b7  '+calc(500)+' \u20ac/u (\u00d7500)';
-  }else{box.style.display='none';}
+
+function onVariantChange(){
+  var p=parseFloat(document.getElementById('fVariant').value)||0;
+  if(p>0){document.getElementById('fPrix').value=p;updatePreview();}
 }
+
 async function saveProduct(){
   var sku=document.getElementById('fSku').value.trim();
   var name=document.getElementById('fName').value.trim();
@@ -1473,19 +1503,31 @@ async function saveProduct(){
   if(!sku){toast('SKU manquant',false);return;}
   if(!prix){toast('Prix achat manquant',false);return;}
   if(!taux){toast('Taux marquage manquant',false);return;}
-  var r=await fetch('/products',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({sku,name,prix_achat:prix,taux_marquage:taux,forfait_min:forfait,cliche,margin,config:{}})});
-  if(r.ok){toast('Produit enregistre');setTimeout(function(){location.reload();},1000);}else toast('Erreur',false);
+  // Stocker aussi dans paliers pour compatibilité
+  var paliers=[{min:0,taux:taux}];
+  var r=await fetch('/products',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({sku,name,prix_achat:prix,taux_marquage:taux,paliers,forfait_min:forfait,cliche,margin,config:{}})});
+  if(r.ok){toast('Produit enregistre');setTimeout(function(){location.reload();},1000);}
+  else toast('Erreur',false);
 }
+
 function editProduct(sku,name,prix,margin,taux,forfait,cliche){
-  document.getElementById('fSku').value=sku;document.getElementById('fName').value=name;
-  document.getElementById('fPrix').value=prix;document.getElementById('fMargin').value=margin;
-  document.getElementById('fTaux').value=taux||'';document.getElementById('fForfait').value=forfait||40;document.getElementById('fCliche').value=cliche||30;
-  updatePreview();window.scrollTo({top:0,behavior:'smooth'});
+  document.getElementById('fSku').value=sku;
+  document.getElementById('fName').value=name;
+  document.getElementById('fPrix').value=prix;
+  document.getElementById('fMargin').value=margin;
+  document.getElementById('fTaux').value=taux||'';
+  document.getElementById('fForfait').value=forfait||40;
+  document.getElementById('fCliche').value=cliche||30;
+  updatePreview();
+  window.scrollTo({top:0,behavior:'smooth'});
 }
+
 async function deleteProduct(sku){
   if(!confirm('Supprimer '+sku+' ?'))return;
   var r=await fetch('/products/'+sku,{method:'DELETE'});
-  if(r.ok){toast('Supprime');setTimeout(function(){location.reload();},1000);}else toast('Erreur',false);
+  if(r.ok){toast('Supprime');setTimeout(function(){location.reload();},1000);}
+  else toast('Erreur',false);
 }
 </script>
 </body>
