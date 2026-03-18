@@ -753,6 +753,7 @@ function onLogoReady(file,b64,imgEl){
       activeZoneIdx=firstIdx;
       applyLogoToZone(firstIdx);
     }
+  }
 
   // UI
   var drop=document.getElementById('uploadDrop');
