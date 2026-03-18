@@ -404,7 +404,33 @@ function sizeCanvas(){
 
 function renderCanvas(){
   var im=imgCache[activeView];
-  if(!im){cv.style.display='none';document.getElementById('imgPlaceholder').style.display='flex';return;}
+  if(!im){
+    // Pas d'image produit — afficher un fond neutre et quand même dessiner le logo
+    var wrap=document.getElementById('imgWrap');
+    var maxW=wrap.clientWidth||400,maxH=wrap.clientHeight||400;
+    cv.style.display='block';
+    document.getElementById('imgPlaceholder').style.display='none';
+    var dpr=window.devicePixelRatio||1;
+    if(cv.width!==maxW*dpr||cv.height!==maxH*dpr){
+      cv.width=maxW*dpr;cv.height=maxH*dpr;
+      cv.style.width=maxW+'px';cv.style.height=maxH+'px';
+    }
+    ctx=cv.getContext('2d');
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.fillStyle='#f0ede8';ctx.fillRect(0,0,maxW,maxH);
+    // Dessiner quand même les logos si présents
+    Object.keys(logos).forEach(function(idxStr){
+      var idx=parseInt(idxStr);
+      var lg=logos[idx];
+      if(!lg||!lg.imgEl)return;
+      var zone=config&&config.zones&&config.zones[idx];
+      if(!zone)return;
+      if(lg.rw===undefined)return;
+      var lx=lg.rx*maxW, ly=lg.ry*maxH, lw=lg.rw*maxW, lh=lg.rh*maxH;
+      ctx.drawImage(lg.imgEl,lx,ly,lw,lh);
+    });
+    return;
+  }
   document.getElementById('imgPlaceholder').style.display='none';
   cv.style.display='block';
   sizeCanvas();
@@ -723,21 +749,23 @@ function onLogoReady(file,b64,imgEl){
       activeZoneIdx=firstIdx;
       applyLogoToZone(firstIdx);
       sizeCanvas();
+      var wrap=document.getElementById('imgWrap');
+      var wrapW=wrap.clientWidth||400;
+      var wrapH=wrap.clientHeight||400;
       var zone=config.zones[firstIdx];
-      if(zone&&zone.pts&&zone.pts.length>=4){
-        // Calculer les coords — si pas d'image (scale=1 et canvas vide), utiliser taille canvas ou fallback
+      var rzx,rzy,rzw,rzh;
+      if(zone&&zone.pts&&zone.pts.length>=4&&imgCache[activeView]){
+        // Image chargée : utiliser scale réel
         var xs=zone.pts.map(function(p){return p.x*scale;});
         var ys=zone.pts.map(function(p){return p.y*scale;});
-        var rzx=Math.min.apply(null,xs), rzy=Math.min.apply(null,ys);
-        var rzw=Math.max.apply(null,xs)-rzx, rzh=Math.max.apply(null,ys)-rzy;
-        // Si zone trop petite (image pas chargée), forcer des coords raisonnables
-        if(rzw<10||rzh<10){
-          var ww=document.getElementById('imgWrap').clientWidth||400;
-          var hh=document.getElementById('imgWrap').clientHeight||400;
-          rzx=ww*0.1; rzy=hh*0.1; rzw=ww*0.8; rzh=hh*0.8;
-        }
-        initLogoPos(firstIdx, rzx, rzy, rzw, rzh);
+        rzx=Math.min.apply(null,xs); rzy=Math.min.apply(null,ys);
+        rzw=Math.max.apply(null,xs)-rzx; rzh=Math.max.apply(null,ys)-rzy;
+      } else {
+        // Pas d'image : centrer le logo sur 80% du wrapper
+        rzx=wrapW*0.1; rzy=wrapH*0.1;
+        rzw=wrapW*0.8; rzh=wrapH*0.8;
       }
+      if(rzw>10&&rzh>10) initLogoPos(firstIdx,rzx,rzy,rzw,rzh);
     }
   }
 
